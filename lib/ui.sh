@@ -16,7 +16,7 @@ _ui_translate_prompt() {
         'Select Xray protocol:') printf '%s' '选择 Xray 协议：' ;;
         'Select sing-box protocol:') printf '%s' '选择 sing-box 协议：' ;;
         'Inbound tag') printf '%s' '入站名称' ;;
-        'Outbound tag') printf '%s' '出站名称' ;;
+        'Outbound tag') printf '%s' '出站标签（仅用于 ProxyCTL 配置）' ;;
         'Listen address') printf '%s' '监听地址' ;;
         'Listen port') printf '%s' '监听端口' ;;
         'Listen UDP port') printf '%s' '监听 UDP 端口' ;;
@@ -40,11 +40,11 @@ _ui_translate_prompt() {
         'Upload limit Mbps (empty = unlimited)') printf '%s' '上传限速 Mbps（留空 = 不限制）' ;;
         'Download limit Mbps (empty = unlimited)') printf '%s' '下载限速 Mbps（留空 = 不限制）' ;;
         'QUIC obfuscation:') printf '%s' 'QUIC 混淆：' ;;
-        'Select outbound type:') printf '%s' '选择出站类型：' ;;
+        'Select outbound type:') printf '%s' '选择要添加的出站类型：' ;;
         'Local source IP to bind') printf '%s' '绑定的本机出口 IP' ;;
-        'Proxy server address') printf '%s' '代理服务器地址' ;;
-        'Proxy server port') printf '%s' '代理服务器端口' ;;
-        'Select outbound:') printf '%s' '选择出站：' ;;
+        'Proxy server address') printf '%s' '上游代理地址' ;;
+        'Proxy server port') printf '%s' '上游代理端口' ;;
+        'Select outbound:') printf '%s' '选择入站使用的出站：' ;;
         'Cloudflare email') printf '%s' 'Cloudflare 邮箱' ;;
         'Cloudflare Global API Key') printf '%s' 'Cloudflare Global API Key' ;;
         'Version (empty = latest)') printf '%s' '版本号（留空 = 最新版）' ;;
@@ -63,6 +63,7 @@ _ui_translate_option() {
         off) printf '%s' '关闭' ;;
         salamander) printf '%s' 'Salamander 混淆' ;;
         'Local IP') printf '%s' '本机指定出口 IP' ;;
+        '新增出站') printf '%s' '添加出站' ;;
         direct) printf '%s' 'direct（直连）' ;;
         http) printf '%s' 'HTTP-01（80 端口）' ;;
         dns-cloudflare) printf '%s' 'Cloudflare DNS 自动验证' ;;
@@ -116,7 +117,8 @@ pause() {
     local _ui_prompt="${1:-按 Enter 继续...}"
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     [[ -t 0 ]] || return 0
-    read -r -p "$_ui_prompt"
+    printf '%s' "$_ui_prompt" >&2
+    read -r
 }
 
 confirm() {
@@ -132,10 +134,12 @@ confirm() {
     fi
 
     if [[ "$_ui_default" == y ]]; then
-        read -r -p "${_ui_prompt} [Y/n] " _ui_response
+        printf '%s [Y/n] ' "$_ui_prompt" >&2
+        read -r _ui_response || return 1
         _ui_response="${_ui_response:-y}"
     else
-        read -r -p "${_ui_prompt} [y/N] " _ui_response
+        printf '%s [y/N] ' "$_ui_prompt" >&2
+        read -r _ui_response || return 1
         _ui_response="${_ui_response:-n}"
     fi
 
@@ -168,19 +172,21 @@ choose() {
         '主菜单'|'入站管理'|'入站操作'|'用户管理'|'出站管理'|'核心管理'|'证书管理'|'备份管理'|'系统工具') ui_clear_screen ;;
     esac
 
-    echo ''
-    echo "$_ui_prompt"
-    echo ''
+    # Interactive presentation must never share stdout with data-producing
+    # helpers. collect_spec functions are intentionally used inside $(...), so
+    # menu text belongs on stderr while stdout remains a clean data channel.
+    printf '\n%s\n\n' "$_ui_prompt" >&2
 
     for _ui_i in "${!_ui_options[@]}"; do
         _ui_display=$(_ui_translate_option "${_ui_options[$_ui_i]}")
-        printf '  %d) %s\n' "$((_ui_i + 1))" "$_ui_display"
+        printf '  %d) %s\n' "$((_ui_i + 1))" "$_ui_display" >&2
     done
 
-    echo ''
+    printf '\n' >&2
     while true; do
-        read -r -p "请选择 [1-${_ui_count}]：" _ui_selection || {
-            echo ''
+        printf '请选择 [1-%s]：' "$_ui_count" >&2
+        read -r _ui_selection || {
+            printf '\n' >&2
             return 1
         }
         if [[ "$_ui_selection" =~ ^[0-9]+$ ]] && (( _ui_selection >= 1 && _ui_selection <= _ui_count )); then
@@ -203,7 +209,8 @@ prompt_value() {
             printf -v "$__var" '%s' "$_ui_default"
             return 0
         }
-        read -r -p "${_ui_prompt} [${_ui_default}]：" _ui_value
+        printf '%s [%s]：' "$_ui_prompt" "$_ui_default" >&2
+        read -r _ui_value || return 1
         printf -v "$__var" '%s' "${_ui_value:-$_ui_default}"
     else
         [[ -t 0 ]] || {
@@ -211,8 +218,9 @@ prompt_value() {
             return 1
         }
         while true; do
-            read -r -p "${_ui_prompt}：" _ui_value || {
-                echo ''
+            printf '%s：' "$_ui_prompt" >&2
+            read -r _ui_value || {
+                printf '\n' >&2
                 return 1
             }
             if [[ -n "$_ui_value" ]]; then
@@ -236,7 +244,8 @@ prompt_optional() {
         return 0
     }
 
-    read -r -p "${_ui_prompt}：" _ui_value
+    printf '%s：' "$_ui_prompt" >&2
+    read -r _ui_value || return 1
     printf -v "$__var" '%s' "${_ui_value:-$_ui_default}"
 }
 
@@ -251,11 +260,12 @@ prompt_secret() {
         return 1
     }
 
-    read -r -s -p "${_ui_prompt}：" _ui_value || {
-        echo ''
+    printf '%s：' "$_ui_prompt" >&2
+    read -r -s _ui_value || {
+        printf '\n' >&2
         return 1
     }
-    echo ''
+    printf '\n' >&2
     printf -v "$__var" '%s' "$_ui_value"
 }
 
@@ -270,11 +280,12 @@ prompt_hidden_secret() {
         return 1
     }
 
-    read -r -s -p "${_ui_prompt}：" _ui_value || {
-        echo ''
+    printf '%s：' "$_ui_prompt" >&2
+    read -r -s _ui_value || {
+        printf '\n' >&2
         return 1
     }
-    echo ''
+    printf '\n' >&2
     printf -v "$__var" '%s' "$_ui_value"
 }
 
