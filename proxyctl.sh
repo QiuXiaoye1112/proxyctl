@@ -6,7 +6,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-readonly PROXYCTL_VERSION='0.2.7'
+readonly PROXYCTL_VERSION='0.3.0'
 
 readonly PROXYCTL_BIN="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}"
 readonly PROXYCTL_LIB="${PROXYCTL_LIB:-/usr/local/lib/proxyctl}"
@@ -24,8 +24,8 @@ readonly PROXYCTL_CERTBOT_WORK="${PROXYCTL_CERTBOT_WORK:-/var/lib/proxyctl/letse
 readonly PROXYCTL_CERTBOT_LOGS="${PROXYCTL_CERTBOT_LOGS:-/var/log/proxyctl/certbot}"
 readonly PROXYCTL_CLOUDFLARE_INI="${PROXYCTL_CLOUDFLARE_INI:-/etc/proxyctl/cloudflare.ini}"
 readonly PROXYCTL_CERT_GROUP="${PROXYCTL_CERT_GROUP:-proxyctl-cert}"
-readonly XRAY_CONFIG='/usr/local/etc/xray/config.json'
-readonly SINGBOX_CONFIG='/etc/sing-box/config.json'
+readonly XRAY_CONFIG="${PROXYCTL_XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
+readonly SINGBOX_CONFIG="${PROXYCTL_SINGBOX_CONFIG:-/etc/sing-box/config.json}"
 
 if [[ -n "${PROXYCTL_DEV_LIB:-}" ]]; then
     readonly LIB_DIR="${PROXYCTL_DEV_LIB}"
@@ -48,7 +48,6 @@ source "${LIB_DIR}/ui.sh"
 source "${LIB_DIR}/capability.sh"
 source "${LIB_DIR}/metadata.sh"
 source "${LIB_DIR}/transaction.sh"
-source "${LIB_DIR}/menu.sh"
 source "${LIB_DIR}/common/system.sh"
 source "${LIB_DIR}/common/service.sh"
 source "${LIB_DIR}/common/network.sh"
@@ -59,6 +58,11 @@ source "${LIB_DIR}/common/backup.sh"
 source "${LIB_DIR}/common/bbr.sh"
 source "${LIB_DIR}/xray/engine.sh"
 source "${LIB_DIR}/singbox/engine.sh"
+source "${LIB_DIR}/inbound.sh"
+source "${LIB_DIR}/xray/inbound.sh"
+source "${LIB_DIR}/singbox/inbound.sh"
+source "${LIB_DIR}/singbox/hy2_hop.sh"
+source "${LIB_DIR}/menu.sh"
 
 cmd_cert() {
     local action="${1:-list}"; shift || true
@@ -91,83 +95,163 @@ cmd_backup() {
     case "$action" in
         create) backup_create "${1:-}" ;;
         list) backup_list ;;
-        restore)
-            [[ -n "${1:-}" ]] || { error 'Usage: proxyctl backup restore <backup-id>'; return 1; }
-            backup_restore "$1" ;;
+        restore) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl backup restore <backup-id>'; return 1; }; backup_restore "$1" ;;
         *) error "Unknown backup command: ${action}"; return 1 ;;
     esac
 }
 
+cmd_core() {
+    local action="${1:-status}" engine="${2:-}" answer
+    [[ "$action" == status ]] || [[ -n "$engine" ]] || { error 'Usage: proxyctl core <action> <xray|singbox> [version|--yes]'; return 1; }
+    case "$action" in
+        status) cmd_status ;;
+        install) engine_call "$engine" install "${3:-}" ;;
+        update|upgrade) engine_call "$engine" update "${3:-}" ;;
+        uninstall)
+            if [[ "${3:-}" != --yes ]]; then confirm answer "Remove ${engine} core but preserve ProxyCTL config/certificates/backups?" n || return 1; [[ "$answer" == y ]] || return 0; fi
+            engine_call "$engine" uninstall
+            ;;
+        start|stop|restart|enable|disable) engine_call "$engine" "$action" ;;
+        logs) engine_call "$engine" logs "${3:-100}" ;;
+        *) error "Unknown core action: ${action}"; return 1 ;;
+    esac
+}
+
+cmd_inbound() {
+    local action="${1:-list}" engine="${2:-}" answer spec
+    case "$action" in
+        list)
+            if [[ -n "$engine" ]]; then inbound_list "$engine"; else
+                for engine in xray singbox; do
+                    echo ''; heading "${engine} inbounds"
+                    if engine_call "$engine" installed >/dev/null 2>&1; then inbound_list "$engine"; else info 'Core not installed.'; fi
+                done
+            fi
+            ;;
+        add)
+            [[ -n "$engine" ]] || { error 'Usage: proxyctl inbound add <xray|singbox> [--json SPEC]'; return 1; }
+            if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; inbound_add_from_spec "$engine" "$4"; else inbound_add_interactive "$engine"; fi
+            ;;
+        show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound show <engine> <tag>'; return 1; }; inbound_show "$engine" "$3" ;;
+        rename) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl inbound rename <engine> <old> <new>'; return 1; }; inbound_rename "$engine" "$3" "$4" ;;
+        delete)
+            [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound delete <engine> <tag> [--yes]'; return 1; }
+            if [[ "${4:-}" != --yes ]]; then confirm answer "Delete ${engine}/${3} and all its users?" n || return 1; [[ "$answer" == y ]] || return 0; fi
+            inbound_delete "$engine" "$3"
+            ;;
+        *) error "Unknown inbound action: ${action}"; return 1 ;;
+    esac
+}
+
+cmd_client() {
+    local action="${1:-list}" engine="${2:-}" tag="${3:-}" answer
+    [[ -n "$engine" && -n "$tag" ]] || { error 'Usage: proxyctl client <list|add|rotate|delete> <engine> <tag> ...'; return 1; }
+    case "$action" in
+        list) inbound_clients "$engine" "$tag" ;;
+        add) inbound_client_add "$engine" "$tag" "${4:-}" "${5:-}" ;;
+        rotate) [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client rotate <engine> <tag> <user> [credential]'; return 1; }; inbound_client_rotate "$engine" "$tag" "$4" "${5:-}" ;;
+        delete)
+            [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client delete <engine> <tag> <user> [--yes]'; return 1; }
+            if [[ "${5:-}" != --yes ]]; then confirm answer "Delete user ${4} from ${engine}/${tag}?" n || return 1; [[ "$answer" == y ]] || return 0; fi
+            inbound_client_delete "$engine" "$tag" "$4"
+            ;;
+        *) error "Unknown client action: ${action}"; return 1 ;;
+    esac
+}
+
+cmd_config() {
+    local action="${1:-check}" engine="${2:-}" config
+    [[ -n "$engine" ]] || { error 'Usage: proxyctl config <check|show> <xray|singbox>'; return 1; }
+    config=$(engine_call "$engine" config_file) || return 1
+    case "$action" in
+        check) engine_call "$engine" validate "$config" ;;
+        show) cat "$config" ;;
+        *) error "Unknown config action: ${action}"; return 1 ;;
+    esac
+}
+
+show_help() {
+    cat <<'EOF'
+ProxyCTL — unified Xray / sing-box manager
+
+Usage:
+  proxyctl                         Interactive menu
+  proxyctl status                  Show both core states
+  proxyctl core install <engine> [version]
+  proxyctl core update <engine> [version]
+  proxyctl core uninstall <engine> [--yes]
+  proxyctl core start|stop|restart|enable|disable <engine>
+  proxyctl core logs <engine> [lines]
+
+  proxyctl inbound list [engine]
+  proxyctl inbound add <engine>
+  proxyctl inbound add <engine> --json '<spec>'
+  proxyctl inbound show <engine> <tag>
+  proxyctl inbound rename <engine> <old> <new>
+  proxyctl inbound delete <engine> <tag> [--yes]
+
+  proxyctl client list <engine> <tag>
+  proxyctl client add <engine> <tag> [name] [credential]
+  proxyctl client rotate <engine> <tag> <name> [credential]
+  proxyctl client delete <engine> <tag> <name> [--yes]
+  proxyctl link <engine> <tag> [name]
+
+  proxyctl config check|show <engine>
+  proxyctl cert ...
+  proxyctl backup create|list|restore ...
+
+Engines: xray, singbox
+Xray: VLESS, VMess, Trojan, SOCKS5, HTTP
+sing-box: AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP
+EOF
+}
+
 _main() {
     local cmd="${1:-}"
-    case "${cmd}" in
+    case "$cmd" in
         '') menu_main ;;
-        help|--help|-h)
-            echo 'Usage: proxyctl [command]'
-            echo ''
-            echo 'Commands:'
-            echo '  help       Show this help'
-            echo '  version    Show version'
-            echo '  status     Show engine status'
-            echo '  menu       Launch interactive menu'
-            echo '  cert       Manage shared TLS certificates'
-            echo '  backup     Create/list/restore portable backups'
-            echo ''
-            echo 'Certificate commands:'
-            echo '  cert list'
-            echo '  cert info <identifier>'
-            echo '  cert paths <identifier>'
-            echo '  cert issue <domain|ip> <email> [http|dns-cloudflare|dns-manual] [force]'
-            echo '  cert self <domain|ip>'
-            echo '  cert import <identifier> <fullchain.pem> <privkey.pem>'
-            echo '  cert renew <identifier>'
-            echo '  cert renew-auto'
-            echo '  cert delete <identifier>'
-            echo '  cert cloudflare'
-            echo ''
-            echo 'Backup commands:'
-            echo '  backup create [label]'
-            echo '  backup list'
-            echo '  backup restore <backup-id>'
-            ;;
+        help|--help|-h) show_help ;;
         version|--version|-v) echo "proxyctl ${PROXYCTL_VERSION}" ;;
         status) cmd_status ;;
         menu) menu_main ;;
+        core) shift || true; cmd_core "$@" ;;
+        inbound) shift || true; cmd_inbound "$@" ;;
+        client|user) shift || true; cmd_client "$@" ;;
+        link|share) shift || true; [[ -n "${1:-}" && -n "${2:-}" ]] || { error 'Usage: proxyctl link <engine> <tag> [user]'; return 1; }; inbound_share "$1" "$2" "${3:-}" ;;
+        config) shift || true; cmd_config "$@" ;;
         cert|tls) shift || true; cmd_cert "$@" ;;
         backup) shift || true; cmd_backup "$@" ;;
+        start|stop|restart|enable|disable) shift || true; [[ -n "${1:-}" ]] || { error "Usage: proxyctl ${cmd} <engine>"; return 1; }; engine_call "$1" "$cmd" ;;
+        logs) shift || true; [[ -n "${1:-}" ]] || { error 'Usage: proxyctl logs <engine> [lines]'; return 1; }; engine_call "$1" logs "${2:-100}" ;;
         internal-init)
-            metadata_init || { echo "proxyctl: metadata_init failed" >&2; exit 1; }
-            metadata_validate || { echo "proxyctl: metadata_validate failed" >&2; exit 1; }
+            metadata_init || { echo 'proxyctl: metadata_init failed' >&2; exit 1; }
+            metadata_validate || { echo 'proxyctl: metadata_validate failed' >&2; exit 1; }
             ;;
-        *)
-            echo "proxyctl: unknown command '${cmd}'"
-            echo 'Run "proxyctl help" for usage.'
-            exit 1
-            ;;
+        internal-hy2-hop-restore) singbox_hy2_hop_restore ;;
+        internal-hy2-hop-clear) singbox_hy2_hop_clear ;;
+        *) echo "proxyctl: unknown command '${cmd}'"; echo 'Run "proxyctl help" for usage.'; exit 1 ;;
     esac
 }
 
 cmd_status() {
+    local count
     heading 'ProxyCTL Status'
     echo "Version: ${PROXYCTL_VERSION}"
+    for engine in xray singbox; do
+        echo ''
+        info "$engine"
+        if engine_call "$engine" installed; then
+            echo '  Installed: yes'
+            echo "  Version:   $(engine_call "$engine" version 2>/dev/null || echo unknown)"
+            if engine_call "$engine" is_active; then echo '  Status:    active'; else echo '  Status:    inactive'; fi
+            count=$(inbound_config_file "$engine" 2>/dev/null | xargs -r jq '.inbounds|length' 2>/dev/null || echo '?')
+            echo "  Inbounds:  ${count}"
+        else
+            echo '  Installed: no'
+        fi
+    done
     echo ''
-    info 'Xray'
-    if engine_call xray installed; then
-        echo "  Installed: yes"
-        echo "  Version:   $(engine_call xray version 2>/dev/null || echo 'unknown')"
-        if engine_call xray is_active; then echo '  Status:    active'; else echo '  Status:    inactive'; fi
-    else
-        echo '  Installed: no'
-    fi
-    echo ''
-    info 'sing-box'
-    if engine_call singbox installed; then
-        echo "  Installed: yes"
-        echo "  Version:   $(engine_call singbox version 2>/dev/null || echo 'unknown')"
-        if engine_call singbox is_active; then echo '  Status:    active'; else echo '  Status:    inactive'; fi
-    else
-        echo '  Installed: no'
-    fi
+    echo "Certificates: $(cert_count 2>/dev/null || echo '?')"
 }
 
 _main "$@"
