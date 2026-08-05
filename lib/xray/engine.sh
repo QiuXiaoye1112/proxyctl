@@ -43,41 +43,27 @@ engine_xray_uninstall() {
 
 # --- engine_xray_start ------------------------------------------------------
 engine_xray_start() {
-    # Stub
-    if engine_xray_installed && systemctl is-active --quiet xray 2>/dev/null; then
-        info 'Xray is already running.'
-    else
-        error 'Xray start is not yet implemented.'
-        return 1
-    fi
+    service_start "$(engine_xray_service_name)"
 }
 
 # --- engine_xray_stop -------------------------------------------------------
 engine_xray_stop() {
-    # Stub
-    error 'Xray stop is not yet implemented.'
-    return 1
+    service_stop "$(engine_xray_service_name)"
 }
 
 # --- engine_xray_restart ----------------------------------------------------
 engine_xray_restart() {
-    # Stub
-    error 'Xray restart is not yet implemented.'
-    return 1
+    service_restart "$(engine_xray_service_name)"
 }
 
 # --- engine_xray_enable -----------------------------------------------------
 engine_xray_enable() {
-    # Stub
-    error 'Xray enable (auto-start) is not yet implemented.'
-    return 1
+    service_enable "$(engine_xray_service_name)"
 }
 
 # --- engine_xray_disable ----------------------------------------------------
 engine_xray_disable() {
-    # Stub
-    error 'Xray disable (auto-start) is not yet implemented.'
-    return 1
+    service_disable "$(engine_xray_service_name)"
 }
 
 # --- engine_xray_is_active --------------------------------------------------
@@ -85,7 +71,7 @@ engine_xray_is_active() {
     if ! engine_xray_installed; then
         return 1
     fi
-    systemctl is-active --quiet xray 2>/dev/null
+    service_is_active "$(engine_xray_service_name)"
 }
 
 # --- engine_xray_validate ---------------------------------------------------

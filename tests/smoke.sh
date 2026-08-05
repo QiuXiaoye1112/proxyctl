@@ -83,6 +83,7 @@ run_meta() {
         source '${PROJECT_DIR}/lib/metadata.sh'
         source '${PROJECT_DIR}/lib/transaction.sh'
         source '${PROJECT_DIR}/lib/common/system.sh'
+        source '${PROJECT_DIR}/lib/common/service.sh'
         source '${PROJECT_DIR}/lib/common/network.sh'
         source '${PROJECT_DIR}/lib/common/port.sh'
         source '${PROJECT_DIR}/lib/common/lock.sh'
@@ -108,6 +109,7 @@ run_meta_capture() {
         source '${PROJECT_DIR}/lib/metadata.sh'
         source '${PROJECT_DIR}/lib/transaction.sh'
         source '${PROJECT_DIR}/lib/common/system.sh'
+        source '${PROJECT_DIR}/lib/common/service.sh'
         source '${PROJECT_DIR}/lib/common/network.sh'
         source '${PROJECT_DIR}/lib/common/port.sh'
         source '${PROJECT_DIR}/lib/common/lock.sh'
@@ -142,7 +144,7 @@ run_cap() {
 
 echo ''
 echo '================================================================'
-echo '  ProxyCTL Phase 1.2 Smoke Tests'
+echo '  ProxyCTL Smoke Tests (Phase 1 core contract)'
 echo '================================================================'
 echo ''
 
@@ -167,7 +169,7 @@ echo '--- 2. Source-layout execution ---'
 out=$(run_proxyctl version)
 rc=$?
 assert_eq "${rc}" '0' 'version exits 0'
-assert_contains "${out}" '0.1.2' 'version outputs 0.1.2'
+assert_contains "${out}" '0.2.0' 'version outputs 0.2.0'
 
 out=$(run_proxyctl help)
 assert_eq "$?" '0' 'help exits 0'
@@ -195,7 +197,7 @@ installed_test() {
 }
 
 out=$(installed_test)
-assert_contains "${out}" '0.1.2' 'installed layout: version works'
+assert_contains "${out}" '0.2.0' 'installed layout: version works'
 
 # ============================================================================
 # 4. CLI exit codes
@@ -744,6 +746,7 @@ MODULES=(
     "${PROJECT_DIR}/lib/metadata.sh"
     "${PROJECT_DIR}/lib/transaction.sh"
     "${PROJECT_DIR}/lib/common/system.sh"
+    "${PROJECT_DIR}/lib/common/service.sh"
     "${PROJECT_DIR}/lib/common/network.sh"
     "${PROJECT_DIR}/lib/common/port.sh"
     "${PROJECT_DIR}/lib/common/lock.sh"
@@ -779,7 +782,7 @@ echo '--- 23. Full load ---'
 
 out=$(run_proxyctl version)
 assert_eq "$?" '0' 'proxyctl loads without error'
-assert_contains "${out}" '0.1.2' 'proxyctl version reports 0.1.2'
+assert_contains "${out}" '0.2.0' 'proxyctl version reports 0.2.0'
 
 # ============================================================================
 # 24. internal-init with custom paths
@@ -843,7 +846,7 @@ fi
 
 # Verify the entry point checks bash version
 out=$(run_proxyctl version)
-assert_contains "${out}" '0.1.2' 'entry point passes bash version check'
+assert_contains "${out}" '0.2.0' 'entry point passes bash version check'
 
 # ============================================================================
 # 27. apply_candidate detects missing file

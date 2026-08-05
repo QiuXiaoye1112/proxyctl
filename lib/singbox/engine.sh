@@ -42,41 +42,27 @@ engine_singbox_uninstall() {
 
 # --- engine_singbox_start ---------------------------------------------------
 engine_singbox_start() {
-    # Stub
-    if engine_singbox_installed && systemctl is-active --quiet sing-box 2>/dev/null; then
-        info 'sing-box is already running.'
-    else
-        error 'sing-box start is not yet implemented.'
-        return 1
-    fi
+    service_start "$(engine_singbox_service_name)"
 }
 
 # --- engine_singbox_stop ----------------------------------------------------
 engine_singbox_stop() {
-    # Stub
-    error 'sing-box stop is not yet implemented.'
-    return 1
+    service_stop "$(engine_singbox_service_name)"
 }
 
 # --- engine_singbox_restart -------------------------------------------------
 engine_singbox_restart() {
-    # Stub
-    error 'sing-box restart is not yet implemented.'
-    return 1
+    service_restart "$(engine_singbox_service_name)"
 }
 
 # --- engine_singbox_enable --------------------------------------------------
 engine_singbox_enable() {
-    # Stub
-    error 'sing-box enable (auto-start) is not yet implemented.'
-    return 1
+    service_enable "$(engine_singbox_service_name)"
 }
 
 # --- engine_singbox_disable -------------------------------------------------
 engine_singbox_disable() {
-    # Stub
-    error 'sing-box disable (auto-start) is not yet implemented.'
-    return 1
+    service_disable "$(engine_singbox_service_name)"
 }
 
 # --- engine_singbox_is_active -----------------------------------------------
@@ -84,7 +70,7 @@ engine_singbox_is_active() {
     if ! engine_singbox_installed; then
         return 1
     fi
-    systemctl is-active --quiet sing-box 2>/dev/null
+    service_is_active "$(engine_singbox_service_name)"
 }
 
 # --- engine_singbox_validate ------------------------------------------------

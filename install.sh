@@ -92,6 +92,7 @@ _verify_lib_contents() {
         xray/engine.sh
         singbox/engine.sh
         common/system.sh
+        common/service.sh
         common/network.sh
         common/port.sh
         common/lock.sh

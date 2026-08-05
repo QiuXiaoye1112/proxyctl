@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.0] — Unreleased
+
+### Added
+
+- `system.sh`: canonical architecture tokens (`amd64`/`arm64`/`armv7`/`386`)
+  with unsupported-architecture rejection
+- `system.sh`: distro detection from `/etc/os-release` (`system_distro`,
+  `system_distro_id`, `system_version`), init detection (`system_init` for
+  systemd/OpenRC), hostname detection
+- `system.sh`: distro-driven package manager mapping and explicit-only
+  `package_install` / `package_remove` / `package_update_index`
+- `service.sh`: unified service API over systemd and OpenRC
+  (`service_exists`, `service_start`, `service_stop`, `service_restart`,
+  `service_enable`, `service_disable`, `service_is_active`,
+  `service_is_enabled`, `service_logs`) with root enforcement on write ops
+- Xray/sing-box engine service methods (`start`/`stop`/`restart`/`enable`/
+  `disable`/`is_active`) now delegate to the shared `service_*` API
+- per-module test suites: `tests/system.sh`, `tests/service.sh`
+
+### Changed
+
+- version: 0.1.2 → 0.2.0
+
 ## [0.1.2] — Unreleased
 
 ### Fixed

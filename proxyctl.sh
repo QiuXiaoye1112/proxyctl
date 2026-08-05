@@ -6,7 +6,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-readonly PROXYCTL_VERSION='0.1.2'
+readonly PROXYCTL_VERSION='0.2.0'
 
 # --- paths ----------------------------------------------------------------
 readonly PROXYCTL_BIN="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}"
@@ -60,6 +60,8 @@ source "${LIB_DIR}/menu.sh"
 
 # shellcheck source=lib/common/system.sh
 source "${LIB_DIR}/common/system.sh"
+# shellcheck source=lib/common/service.sh
+source "${LIB_DIR}/common/service.sh"
 # shellcheck source=lib/common/network.sh
 source "${LIB_DIR}/common/network.sh"
 # shellcheck source=lib/common/port.sh

@@ -1,8 +1,8 @@
-# ProxyCTL 0.1.2
+# ProxyCTL 0.2.0
 
 Unified proxy manager for Xray and sing-box.
 
-> **Phase 1 — Architecture Skeleton (Hardened)**
+> **Phase 2 — Common Infrastructure**
 
 ## Requirements
 
@@ -15,11 +15,15 @@ Unified proxy manager for Xray and sing-box.
 
 - **Project skeleton** with strict module boundaries
 - **Engine Registry** — unified `engine_call xray|singbox <method>` dispatcher
-- **Engine API** — both engines expose all 14 standard methods (mostly stubs)
+- **Engine API** — both engines expose all 14 standard methods
 - **Capability system** — V1 protocol and transport definitions (no hard-coded menus)
 - **Menu skeleton** — interactive terminal UI with inbound creation wizard
 - **Metadata** — JSON-backed persistent state at `/var/lib/proxyctl/meta.json`
 - **Transaction staging framework** — staging with commit/rollback and path-safety guards
+- **System abstraction** — OS, distro, architecture, init system, package manager,
+  hostname detection with canonical arch tokens (`amd64`, `arm64`, `armv7`, `386`)
+- **Service abstraction** — unified `service_*` API over systemd and OpenRC
+  (`start`/`stop`/`restart`/`enable`/`disable`/`is_active`/`is_enabled`/`logs`)
 - **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
@@ -27,16 +31,19 @@ Unified proxy manager for Xray and sing-box.
 - **Safe installer** — single-transaction install: staged lib/binary swap, atomic
   symlink, metadata init, and a unified rollback that restores the previous
   installation on any failure. Old artifacts are kept until the final commit.
-- **Smoke test suite** — comprehensive security, functional, and installer
-  rollback assertions (156+ checks)
+- **Test suites** — `smoke.sh` (core contract) plus per-module suites
+  (`system.sh`, `service.sh`)
 
 ## Planned (future phases)
 
 - Core installation (Xray, sing-box)
 - Real configuration generation (VLESS, VMess, Trojan, AnyTLS, Hysteria2, …)
 - TLS certificate management (self-signed + ACME)
-- Service operations (start/stop/restart/enable/disable via systemd)
+- Network / port utilities (IP detection, TCP/UDP port checks)
+- Process locking (`flock`-based)
+- Configuration apply transactions (`apply_candidate`)
 - Backup and restore
+- Firewall setup
 - Firewall setup
 - BBR congestion control
 - Migration from xrayctl / sbctl
