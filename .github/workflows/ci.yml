@@ -70,6 +70,9 @@ jobs:
       - name: Hardened sing-box users
         run: bash tests/singbox_clients.sh
 
+      - name: Inbound edits and user rename
+        run: bash tests/inbound_edit.sh
+
       - name: Restore runtime synchronization
         run: bash tests/runtime.sh
 
