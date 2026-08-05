@@ -34,9 +34,9 @@ TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
 
 # ------------------------------------------------------------------------------
-# 1. Bash 4.0 compatibility: no Bash 4.2-only declare -g.
+# 1. Bash 4.0 compatibility: no Bash 4.2-only declare -g in executable lines.
 # ------------------------------------------------------------------------------
-if grep -Eq 'declare[[:space:]]+-[^[:space:]]*g' "${PROJECT_DIR}/lib/common/lock.sh"; then
+if grep -Eq '^[[:space:]]*declare[[:space:]]+-[^[:space:]]*g' "${PROJECT_DIR}/lib/common/lock.sh"; then
     fail 'lock.sh must not use declare -g'
 else
     pass 'lock.sh avoids Bash 4.2-only declare -g'
@@ -73,7 +73,6 @@ assert_ok lock_acquire config 'initial acquire before duplicate-idempotency test
 _lock_require_flock() { return 1; }
 assert_ok lock_acquire config 'duplicate acquire succeeds without re-checking flock'
 unset -f _lock_require_flock
-# Restore the production helper after the test override.
 _lock_require_flock() {
     command -v flock >/dev/null 2>&1 || {
         echo 'flock is required for ProxyCTL locking.' >&2
