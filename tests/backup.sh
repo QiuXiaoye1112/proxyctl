@@ -62,7 +62,8 @@ engine_call(){
 }
 
 make_pair(){
-    local name="$1" d="$ROOT/fixture-$name"
+    local name="$1" d
+    d="$ROOT/fixture-$name"
     mkdir -p "$d"
     openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=${name}.example.com" \
       -addext "subjectAltName=DNS:${name}.example.com" -keyout "$d/key.pem" -out "$d/cert.pem" >/dev/null 2>&1
