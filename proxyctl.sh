@@ -71,6 +71,7 @@ source "${LIB_DIR}/xray/outbound.sh"
 source "${LIB_DIR}/singbox/outbound.sh"
 source "${LIB_DIR}/singbox/hy2_hop.sh"
 source "${LIB_DIR}/runtime.sh"
+source "${LIB_DIR}/uninstall.sh"
 source "${LIB_DIR}/menu.sh"
 
 cmd_cert() {
@@ -251,11 +252,18 @@ Usage:
   proxyctl config check|show <engine>
   proxyctl cert ...
   proxyctl backup create|list|restore ...
+  proxyctl uninstall [--yes] [--force]
+  proxyctl uninstall --purge --yes
 
 Engines: xray, singbox
 Xray: VLESS, VMess, Trojan, SOCKS5, HTTP
 sing-box: AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP
 Outbound types: SOCKS5, HTTP, LOCAL source IP
+
+Uninstall modes:
+  default        Remove ProxyCTL manager only; preserve cores and node data.
+  --force        Allow manager-only removal even when HY2 hopping depends on it.
+  --purge --yes  Destructive: remove cores, configs, certs, metadata and backups.
 EOF
 }
 
@@ -275,6 +283,7 @@ _main() {
         config) shift || true; cmd_config "$@" ;;
         cert|tls) shift || true; cmd_cert "$@" ;;
         backup) shift || true; cmd_backup "$@" ;;
+        uninstall) shift || true; proxyctl_uninstall "$@" ;;
         start|stop|restart|enable|disable) shift || true; [[ -n "${1:-}" ]] || { error "Usage: proxyctl ${cmd} <engine>"; return 1; }; engine_call "$1" "$cmd" ;;
         logs) shift || true; [[ -n "${1:-}" ]] || { error 'Usage: proxyctl logs <engine> [lines]'; return 1; }; engine_call "$1" logs "${2:-100}" ;;
         internal-init)
