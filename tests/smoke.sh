@@ -171,7 +171,7 @@ echo '--- 2. Source-layout execution ---'
 out=$(run_proxyctl version)
 rc=$?
 assert_eq "${rc}" '0' 'version exits 0'
-assert_contains "${out}" '0.2.3' 'version outputs 0.2.3'
+assert_contains "${out}" '0.2.3' 'version outputs 0.2.4'
 
 out=$(run_proxyctl help)
 assert_eq "$?" '0' 'help exits 0'
@@ -779,7 +779,7 @@ echo '--- 23. Full load ---'
 
 out=$(run_proxyctl version)
 assert_eq "$?" '0' 'proxyctl loads without error'
-assert_contains "${out}" '0.2.3' 'proxyctl version reports 0.2.3'
+assert_contains "${out}" '0.2.3' 'proxyctl version reports 0.2.4'
 
 # ============================================================================
 # 24. internal-init with custom paths
@@ -853,6 +853,10 @@ echo '--- 27. apply_candidate ---'
 
 out=$(run_meta_capture 'apply_candidate xray /nonexistent/candidate.json')
 assert_contains "${out}" 'does not exist' 'apply_candidate detects missing file'
+
+# Unknown engine must be rejected before touching anything.
+assert_fail "run_meta 'apply_candidate nonexistent /tmp/whatever.json' 2>/dev/null" \
+    'apply_candidate rejects unknown engine'
 
 # ============================================================================
 # 28. Installed-layout: help and status
