@@ -29,7 +29,7 @@ bad(){ if "$@"; then fail "$*"; else pass "$*"; fi; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
-export PROXYCTL_VERSION=0.2.6
+export PROXYCTL_VERSION=0.2.7
 export PROXYCTL_DATA="$ROOT/data"
 export PROXYCTL_META="$PROXYCTL_DATA/meta.json"
 export PROXYCTL_CERTS="$ROOT/certs"
@@ -87,6 +87,7 @@ printf '\nProxyCTL Phase 2.7 Backup Tests\n\n'
 
 ok _backup_validate_label nightly
 bad _backup_validate_label '../bad'
+bad _backup_validate_label 'a..b'
 ok _backup_validate_id 'proxyctl-20260805-120000-123-nightly.tar.gz'
 bad _backup_validate_id '../../etc/passwd'
 ok _backup_member_ok 'certs/example.com/fullchain.pem'
