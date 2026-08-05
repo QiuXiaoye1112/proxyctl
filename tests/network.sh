@@ -118,7 +118,6 @@ echo ''
 # ============================================================================
 echo '--- 1. IPv4 validation ---'
 
-# Leading zeros are decimal text, including octets containing 8/9.
 for ip in 0.0.0.0 1.1.1.1 127.0.0.1 192.168.1.1 255.255.255.255 \
           01.02.03.04 08.08.08.08 009.010.099.255 000.000.000.000; do
     assert_ok "network_validate_ipv4 '$ip'" "IPv4 accepts: ${ip}"
@@ -129,12 +128,11 @@ for bad in 256.0.0.1 1.2.3 1.2.3.4.5 1..3.4 abc 1.2.3.4. 0000.0.0.0 ''; do
 done
 
 # ============================================================================
-# 2. IPv6 validation matrix (shell fallback + end-to-end)
+# 2. IPv6 validation matrix
 # ============================================================================
 echo ''
 echo '--- 2. IPv6 validation ---'
 
-# Pure-shell grammar matrix (deterministic regardless of python3)
 for ip in '::1' '::' '2001:db8::1' 'fe80::1' 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff' '::ffff:192.168.1.1' '2001:db8:0:0:0:0:2:1'; do
     assert_ok "_network_validate_ipv6_shell '$ip'" "IPv6 shell accepts: ${ip}"
 done
@@ -143,7 +141,6 @@ for bad in '2001:::1' 'gggg::1' '12345::1' ':1:2:3:4:5:6:7:8' '1:2:3:4:5:6:7:8:'
     assert_fail "_network_validate_ipv6_shell '$bad'" "IPv6 shell rejects: '${bad}'"
 done
 
-# End-to-end (python3 fast path or shell fallback)
 for ip in '::1' '2001:db8::1' 'fe80::1' '::'; do
     assert_ok "network_validate_ipv6 '$ip'" "network_validate_ipv6 accepts: ${ip}"
 done
@@ -192,7 +189,7 @@ assert_fail "network_validate_host 'bad host'" 'host rejects spaces'
 assert_fail "network_validate_host ''" 'host rejects empty'
 
 # ============================================================================
-# 6. Default interface (mock ip)
+# 6. Default interface
 # ============================================================================
 echo ''
 echo '--- 6. Default interface ---'
@@ -200,13 +197,12 @@ echo '--- 6. Default interface ---'
 assert_eq "$(network_default_interface_v4)" 'eth0' 'default interface v4 = eth0'
 assert_eq "$(network_default_interface_v6)" 'eth0' 'default interface v6 = eth0'
 
-# No IPv6 route → failure
 export NET_TEST_NO_V6_ROUTE=1
 assert_fail "network_default_interface_v6" 'default interface v6 fails without route'
 unset NET_TEST_NO_V6_ROUTE
 
 # ============================================================================
-# 7. Primary IP (mock ip + re-validation)
+# 7. Primary IP
 # ============================================================================
 echo ''
 echo '--- 7. Primary IP ---'
@@ -217,7 +213,6 @@ assert_eq "$(network_primary_ipv6)" '2001:db8::2' 'primary IPv6 = 2001:db8::2'
 assert_ok "network_has_ipv4" 'has_ipv4 true'
 assert_ok "network_has_ipv6" 'has_ipv6 true'
 
-# ip failure propagates
 export NET_TEST_IP_FAIL=1
 assert_fail "network_primary_ipv4" 'primary IPv4 fails when ip fails'
 assert_fail "network_has_ipv4" 'has_ipv4 false when ip fails'
@@ -232,17 +227,15 @@ echo '--- 8. Public IPv4 fallback ---'
 export NET_TEST_CURL_OUT='1.2.3.4'
 assert_eq "$(network_public_ipv4)" '1.2.3.4' 'public IPv4 = 1.2.3.4 (fallback to icanhazip)'
 
-# Invalid provider output must be skipped, never emitted
 export NET_TEST_CURL_OUT='<html>error 500</html>'
 assert_fail "network_public_ipv4" 'public IPv4 fails when all providers invalid'
 
 # ============================================================================
-# 9. Public IPv6 provider fallback (IPv4 response must be skipped)
+# 9. Public IPv6 provider fallback
 # ============================================================================
 echo ''
 echo '--- 9. Public IPv6 fallback ---'
 
-# ipify mock returns an invalid string; family 6 must skip it.
 export NET_TEST_CURL_OUT='2001:db8::1'
 assert_eq "$(network_public_ipv6)" '2001:db8::1' 'public IPv6 = 2001:db8::1'
 
@@ -252,18 +245,23 @@ assert_fail "network_public_ipv6" 'public IPv6 fails when provider output invali
 unset NET_TEST_CURL_OUT
 
 # ============================================================================
-# 10. DNS resolve (mock getent)
+# 10. DNS resolve
 # ============================================================================
 echo ''
 echo '--- 10. DNS resolve ---'
 
-assert_eq "$(network_resolve_domain example.com 4 | head -1)" '104.16.1.1' 'resolve v4 first IP'
-assert_eq "$(network_resolve_domain example.com 4 | wc -l | tr -d ' ')" '2' 'resolve v4 dedups (2 unique)'
-assert_eq "$(network_resolve_domain example.com 4 | tail -1)" '104.16.2.1' 'resolve v4 second IP'
+# Consume the resolver output completely before inspecting individual lines.
+# Piping the producer into `head -1` intentionally closes stdout early and
+# makes Bash's builtin printf report EPIPE even though resolution succeeded.
+RESOLVE_V4=$(network_resolve_domain example.com 4)
+RESOLVE_V4_FIRST=${RESOLVE_V4%%$'\n'*}
+RESOLVE_V4_LAST=${RESOLVE_V4##*$'\n'}
+assert_eq "$RESOLVE_V4_FIRST" '104.16.1.1' 'resolve v4 first IP'
+assert_eq "$(printf '%s\n' "$RESOLVE_V4" | wc -l | tr -d ' ')" '2' 'resolve v4 dedups (2 unique)'
+assert_eq "$RESOLVE_V4_LAST" '104.16.2.1' 'resolve v4 second IP'
 assert_eq "$(network_resolve_domain example.com 6)" '2001:db8::1' 'resolve v6 IP'
 assert_eq "$(network_resolve_domain example.com any | wc -l | tr -d ' ')" '3' 'resolve any = 3 unique (2 v4 + 1 v6)'
 
-# Invalid domain must fail before touching DNS
 : > "${NET_TEST_LOG}"
 assert_fail "network_resolve_domain 'exa_mple.com'" 'resolve rejects invalid domain'
 if [[ ! -s "${NET_TEST_LOG}" ]]; then
@@ -273,7 +271,7 @@ else
 fi
 
 # ============================================================================
-# 11. TCP connect (mock nc)
+# 11. TCP connect
 # ============================================================================
 echo ''
 echo '--- 11. TCP connect ---'
@@ -305,9 +303,6 @@ echo '--- 12. Cleanup ---'
 
 rm -rf "${MOCK_DIR}"
 
-# ============================================================================
-# Summary
-# ============================================================================
 echo ''
 echo '================================================================'
 echo "  Network tests: ${PASSED} passed, ${FAILED} failed"
