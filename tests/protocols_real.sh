@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# tests/protocols_real.sh — validate every Phase 3 protocol with real cores
+# tests/protocols_real.sh — validate protocol and outbound builders with cores
 # ------------------------------------------------------------------------------
 set -o errexit
 set -o nounset
@@ -22,6 +22,9 @@ source "$PROJECT_DIR/lib/singbox/engine.sh"
 source "$PROJECT_DIR/lib/inbound.sh"
 source "$PROJECT_DIR/lib/xray/inbound.sh"
 source "$PROJECT_DIR/lib/singbox/inbound.sh"
+source "$PROJECT_DIR/lib/outbound.sh"
+source "$PROJECT_DIR/lib/xray/outbound.sh"
+source "$PROJECT_DIR/lib/singbox/outbound.sh"
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
@@ -65,6 +68,34 @@ validate_singbox() {
         pass "sing-box core accepts ${name}"
     else
         fail "sing-box core rejects ${name}: ${output}"
+    fi
+}
+
+validate_xray_outbound() {
+    local name="$1" spec="$2" outbound config="$ROOT/xray-out-${name}.json" output
+    if ! outbound=$(engine_xray_outbound_build_from_spec "$spec" 2>"$ROOT/error"); then
+        fail "Xray outbound builder: ${name} — $(cat "$ROOT/error")"
+        return 0
+    fi
+    jq -n --argjson outbound "$outbound" '{log:{loglevel:"warning"},inbounds:[],outbounds:[{protocol:"freedom",tag:"direct"},$outbound],routing:{rules:[]}}' >"$config"
+    if output=$(xray run -test -config "$config" 2>&1); then
+        pass "Xray core accepts outbound ${name}"
+    else
+        fail "Xray core rejects outbound ${name}: ${output}"
+    fi
+}
+
+validate_singbox_outbound() {
+    local name="$1" spec="$2" outbound config="$ROOT/singbox-out-${name}.json" output
+    if ! outbound=$(engine_singbox_outbound_build_from_spec "$spec" 2>"$ROOT/error"); then
+        fail "sing-box outbound builder: ${name} — $(cat "$ROOT/error")"
+        return 0
+    fi
+    jq -n --argjson outbound "$outbound" '{log:{level:"warn",timestamp:true},inbounds:[],outbounds:[{type:"direct",tag:"direct"},$outbound],route:{final:"direct",rules:[]}}' >"$config"
+    if output=$(sing-box check -c "$config" 2>&1); then
+        pass "sing-box core accepts outbound ${name}"
+    else
+        fail "sing-box core rejects outbound ${name}: ${output}"
     fi
 }
 
@@ -114,5 +145,15 @@ validate_singbox 'trojan-ws-tls' "$(singbox_spec Trojan s-trojan-ws 22006 WebSoc
 validate_singbox 'socks5' "$(singbox_spec SOCKS5 s-socks 22007 '' '')"
 validate_singbox 'http' "$(singbox_spec HTTP s-http 22008 '' '')"
 
-printf '\nProtocol real-core tests: %d passed, %d failed\n' "$PASS" "$FAIL"
+printf '\nReal Xray outbound validation\n'
+validate_xray_outbound socks5 "$(jq -cn '{protocol:"SOCKS5",tag:"proxy",server:"127.0.0.1",port:1080,username:"user",password:"pass"}')"
+validate_xray_outbound http "$(jq -cn '{protocol:"HTTP",tag:"proxy",server:"127.0.0.1",port:3128,username:"",password:""}')"
+validate_xray_outbound local "$(jq -cn '{protocol:"LOCAL",tag:"local-test",bind_ip:"127.0.0.1"}')"
+
+printf '\nReal sing-box outbound validation\n'
+validate_singbox_outbound socks5 "$(jq -cn '{protocol:"SOCKS5",tag:"proxy",server:"127.0.0.1",port:1080,username:"user",password:"pass"}')"
+validate_singbox_outbound http "$(jq -cn '{protocol:"HTTP",tag:"proxy",server:"127.0.0.1",port:3128,username:"",password:""}')"
+validate_singbox_outbound local "$(jq -cn '{protocol:"LOCAL",tag:"local-test",bind_ip:"127.0.0.1"}')"
+
+printf '\nReal-core tests: %d passed, %d failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))
