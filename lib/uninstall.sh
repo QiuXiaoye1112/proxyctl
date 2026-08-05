@@ -110,16 +110,23 @@ _uninstall_manager_only() {
 }
 
 _uninstall_remove_cert_dropins() {
-    local engine service dir file changed=0 unit_root
+    local engine service dir file changed=0 unit_root expected_group
     [[ "$(system_init 2>/dev/null || true)" == systemd ]] || return 0
     unit_root=$(_uninstall_root_path "${PROXYCTL_SYSTEMD_UNIT_DIR:-/etc/systemd/system}")
+    expected_group=$(cert_runtime_group 2>/dev/null || true)
     for engine in xray singbox; do
         service=$(engine_call "$engine" service_name 2>/dev/null || true)
         [[ -n "$service" ]] || continue
         dir="${unit_root}/${service}.service.d"
         file="${dir}/20-proxyctl-certificates.conf"
-        if [[ -f "$file" && ! -L "$file" ]] && grep -Fq 'managed by ProxyCTL' "$file" 2>/dev/null; then
+        [[ -f "$file" && ! -L "$file" ]] || continue
+        # This exact filename is owned by ProxyCTL's certificate manager. Older
+        # releases had no marker, so also accept the exact expected group line.
+        if grep -Fq 'managed by ProxyCTL' "$file" 2>/dev/null || \
+           { [[ -n "$expected_group" ]] && grep -Fxq "SupplementaryGroups=${expected_group}" "$file" 2>/dev/null; }; then
             rm -f -- "$file"; rmdir "$dir" 2>/dev/null || true; changed=1
+        else
+            warn "Certificate access drop-in has unexpected contents; leaving it untouched: ${file}"
         fi
     done
     if (( changed )) && [[ "${PROXYCTL_UNINSTALL_ROOT:-/}" == / ]]; then systemctl daemon-reload >/dev/null 2>&1 || true; fi
