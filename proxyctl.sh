@@ -7,7 +7,6 @@ set -o nounset
 set -o pipefail
 
 readonly PROXYCTL_VERSION='0.3.0'
-
 readonly PROXYCTL_BIN="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}"
 readonly PROXYCTL_LIB="${PROXYCTL_LIB:-/usr/local/lib/proxyctl}"
 readonly PROXYCTL_DATA="${PROXYCTL_DATA:-/var/lib/proxyctl}"
@@ -71,6 +70,7 @@ source "${LIB_DIR}/xray/outbound.sh"
 source "${LIB_DIR}/singbox/outbound.sh"
 source "${LIB_DIR}/singbox/hy2_hop.sh"
 source "${LIB_DIR}/runtime.sh"
+source "${LIB_DIR}/reconcile.sh"
 source "${LIB_DIR}/uninstall.sh"
 source "${LIB_DIR}/menu.sh"
 
@@ -80,21 +80,13 @@ cmd_cert() {
         list) cert_list ;;
         info) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl cert info <identifier>'; return 1; }; cert_info "$1" ;;
         paths) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl cert paths <identifier>'; return 1; }; printf '%s\n%s\n' "$(cert_fullchain "$1")" "$(cert_privkey "$1")" ;;
-        issue)
-            [[ -n "${1:-}" && -n "${2:-}" ]] || { error 'Usage: proxyctl cert issue <domain|ip> <email> [http|dns-cloudflare|dns-manual] [force=0|1]'; return 1; }
-            cert_acme_issue "$1" "$2" "${3:-http}" "${4:-0}" ;;
+        issue) [[ -n "${1:-}" && -n "${2:-}" ]] || { error 'Usage: proxyctl cert issue <domain|ip> <email> [http|dns-cloudflare|dns-manual] [force=0|1]'; return 1; }; cert_acme_issue "$1" "$2" "${3:-http}" "${4:-0}" ;;
         self) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl cert self <domain|ip>'; return 1; }; cert_generate_self "$1" ;;
-        import)
-            [[ -n "${1:-}" && -n "${2:-}" && -n "${3:-}" ]] || { error 'Usage: proxyctl cert import <identifier> <fullchain.pem> <privkey.pem>'; return 1; }
-            cert_import "$1" "$2" "$3" ;;
+        import) [[ -n "${1:-}" && -n "${2:-}" && -n "${3:-}" ]] || { error 'Usage: proxyctl cert import <identifier> <fullchain.pem> <privkey.pem>'; return 1; }; cert_import "$1" "$2" "$3" ;;
         renew) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl cert renew <identifier>'; return 1; }; cert_renew "$1" ;;
         renew-auto) cert_renew_all ;;
         delete) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl cert delete <identifier>'; return 1; }; cert_delete "$1" ;;
-        cloudflare)
-            local email api_key
-            prompt_value email 'Cloudflare email' || return 1
-            prompt_hidden_secret api_key 'Cloudflare Global API Key' || return 1
-            cert_save_cloudflare_credentials "$email" "$api_key" ;;
+        cloudflare) local email api_key; prompt_value email 'Cloudflare email' || return 1; prompt_hidden_secret api_key 'Cloudflare Global API Key' || return 1; cert_save_cloudflare_credentials "$email" "$api_key" ;;
         cloudflare-delete) cert_delete_cloudflare_credentials ;;
         *) error "Unknown certificate command: ${action}"; return 1 ;;
     esac
@@ -117,10 +109,7 @@ cmd_core() {
         status) cmd_status ;;
         install) engine_call "$engine" install "${3:-}" ;;
         update|upgrade) engine_call "$engine" update "${3:-}" ;;
-        uninstall)
-            if [[ "${3:-}" != --yes ]]; then confirm answer "Remove ${engine} core but preserve ProxyCTL config/certificates/backups?" n || return 1; [[ "$answer" == y ]] || return 0; fi
-            engine_call "$engine" uninstall
-            ;;
+        uninstall) if [[ "${3:-}" != --yes ]]; then confirm answer "Remove ${engine} core but preserve ProxyCTL config/certificates/backups?" n || return 1; [[ "$answer" == y ]] || return 0; fi; engine_call "$engine" uninstall ;;
         start|stop|restart|enable|disable) engine_call "$engine" "$action" ;;
         logs) engine_call "$engine" logs "${3:-100}" ;;
         *) error "Unknown core action: ${action}"; return 1 ;;
@@ -130,29 +119,12 @@ cmd_core() {
 cmd_inbound() {
     local action="${1:-list}" engine="${2:-}" answer
     case "$action" in
-        list)
-            if [[ -n "$engine" ]]; then inbound_list "$engine"; else
-                for engine in xray singbox; do
-                    echo ''; heading "${engine} inbounds"
-                    if engine_call "$engine" installed >/dev/null 2>&1; then inbound_list "$engine"; else info 'Core not installed.'; fi
-                done
-            fi
-            ;;
-        add)
-            [[ -n "$engine" ]] || { error 'Usage: proxyctl inbound add <xray|singbox> [--json SPEC]'; return 1; }
-            if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; inbound_add_from_spec "$engine" "$4"; else inbound_add_interactive "$engine"; fi
-            ;;
+        list) if [[ -n "$engine" ]]; then inbound_list "$engine"; else for engine in xray singbox; do echo ''; heading "${engine} inbounds"; if engine_call "$engine" installed >/dev/null 2>&1; then inbound_list "$engine"; else info 'Core not installed.'; fi; done; fi ;;
+        add) [[ -n "$engine" ]] || { error 'Usage: proxyctl inbound add <xray|singbox> [--json SPEC]'; return 1; }; if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; inbound_add_from_spec "$engine" "$4"; else inbound_add_interactive "$engine"; fi ;;
         show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound show <engine> <tag>'; return 1; }; inbound_show "$engine" "$3" ;;
-        modify)
-            [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" && -n "${5:-}" ]] || { error 'Usage: proxyctl inbound modify <engine> <tag> <listen-ip> <port> [client-host]'; return 1; }
-            inbound_modify_listen "$engine" "$3" "$4" "$5" "${6:-}"
-            ;;
+        modify) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" && -n "${5:-}" ]] || { error 'Usage: proxyctl inbound modify <engine> <tag> <listen-ip> <port> [client-host]'; return 1; }; inbound_modify_listen "$engine" "$3" "$4" "$5" "${6:-}" ;;
         rename) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl inbound rename <engine> <old> <new>'; return 1; }; inbound_rename "$engine" "$3" "$4" ;;
-        delete)
-            [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound delete <engine> <tag> [--yes]'; return 1; }
-            if [[ "${4:-}" != --yes ]]; then confirm answer "Delete ${engine}/${3} and all its users?" n || return 1; [[ "$answer" == y ]] || return 0; fi
-            inbound_delete "$engine" "$3"
-            ;;
+        delete) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound delete <engine> <tag> [--yes]'; return 1; }; if [[ "${4:-}" != --yes ]]; then confirm answer "Delete ${engine}/${3} and all its users?" n || return 1; [[ "$answer" == y ]] || return 0; fi; inbound_delete "$engine" "$3" ;;
         *) error "Unknown inbound action: ${action}"; return 1 ;;
     esac
 }
@@ -160,28 +132,11 @@ cmd_inbound() {
 cmd_outbound() {
     local action="${1:-list}" engine="${2:-}" answer
     case "$action" in
-        list)
-            if [[ -n "$engine" ]]; then outbound_list "$engine"; else
-                for engine in xray singbox; do
-                    echo ''; heading "${engine} outbounds"
-                    if engine_call "$engine" installed >/dev/null 2>&1; then outbound_list "$engine"; else info 'Core not installed.'; fi
-                done
-            fi
-            ;;
-        add)
-            [[ -n "$engine" ]] || { error 'Usage: proxyctl outbound add <xray|singbox> [--json SPEC]'; return 1; }
-            if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; outbound_add_from_spec "$engine" "$4"; else outbound_add_interactive "$engine"; fi
-            ;;
+        list) if [[ -n "$engine" ]]; then outbound_list "$engine"; else for engine in xray singbox; do echo ''; heading "${engine} outbounds"; if engine_call "$engine" installed >/dev/null 2>&1; then outbound_list "$engine"; else info 'Core not installed.'; fi; done; fi ;;
+        add) [[ -n "$engine" ]] || { error 'Usage: proxyctl outbound add <xray|singbox> [--json SPEC]'; return 1; }; if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; outbound_add_from_spec "$engine" "$4"; else outbound_add_interactive "$engine"; fi ;;
         show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl outbound show <engine> <tag>'; return 1; }; outbound_show "$engine" "$3" ;;
-        assign)
-            [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl outbound assign <engine> <inbound> <outbound|direct>'; return 1; }
-            outbound_assign "$engine" "$3" "$4"
-            ;;
-        delete)
-            [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl outbound delete <engine> <tag> [--yes]'; return 1; }
-            if [[ "${4:-}" != --yes ]]; then confirm answer "Delete outbound ${engine}/${3}? Managed bindings will revert to direct." n || return 1; [[ "$answer" == y ]] || return 0; fi
-            outbound_delete "$engine" "$3"
-            ;;
+        assign) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl outbound assign <engine> <inbound> <outbound|direct>'; return 1; }; outbound_assign "$engine" "$3" "$4" ;;
+        delete) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl outbound delete <engine> <tag> [--yes]'; return 1; }; if [[ "${4:-}" != --yes ]]; then confirm answer "Delete outbound ${engine}/${3}? Managed bindings will revert to direct." n || return 1; [[ "$answer" == y ]] || return 0; fi; outbound_delete "$engine" "$3" ;;
         *) error "Unknown outbound action: ${action}"; return 1 ;;
     esac
 }
@@ -194,11 +149,7 @@ cmd_client() {
         add) inbound_client_add "$engine" "$tag" "${4:-}" "${5:-}" ;;
         rename) [[ -n "${4:-}" && -n "${5:-}" ]] || { error 'Usage: proxyctl client rename <engine> <tag> <old> <new>'; return 1; }; inbound_client_rename "$engine" "$tag" "$4" "$5" ;;
         rotate) [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client rotate <engine> <tag> <user> [credential]'; return 1; }; inbound_client_rotate "$engine" "$tag" "$4" "${5:-}" ;;
-        delete)
-            [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client delete <engine> <tag> <user> [--yes]'; return 1; }
-            if [[ "${5:-}" != --yes ]]; then confirm answer "Delete user ${4} from ${engine}/${tag}?" n || return 1; [[ "$answer" == y ]] || return 0; fi
-            inbound_client_delete "$engine" "$tag" "$4"
-            ;;
+        delete) [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client delete <engine> <tag> <user> [--yes]'; return 1; }; if [[ "${5:-}" != --yes ]]; then confirm answer "Delete user ${4} from ${engine}/${tag}?" n || return 1; [[ "$answer" == y ]] || return 0; fi; inbound_client_delete "$engine" "$tag" "$4" ;;
         *) error "Unknown client action: ${action}"; return 1 ;;
     esac
 }
@@ -207,11 +158,7 @@ cmd_config() {
     local action="${1:-check}" engine="${2:-}" config
     [[ -n "$engine" ]] || { error 'Usage: proxyctl config <check|show> <xray|singbox>'; return 1; }
     config=$(engine_call "$engine" config_file) || return 1
-    case "$action" in
-        check) engine_call "$engine" validate "$config" ;;
-        show) cat "$config" ;;
-        *) error "Unknown config action: ${action}"; return 1 ;;
-    esac
+    case "$action" in check) engine_call "$engine" validate "$config" ;; show) cat "$config" ;; *) error "Unknown config action: ${action}"; return 1 ;; esac
 }
 
 show_help() {
@@ -250,6 +197,7 @@ Usage:
   proxyctl link <engine> <tag> [name]
 
   proxyctl config check|show <engine>
+  proxyctl reconcile [xray|singbox]
   proxyctl cert ...
   proxyctl backup create|list|restore ...
   proxyctl uninstall [--yes] [--force]
@@ -259,6 +207,10 @@ Engines: xray, singbox
 Xray: VLESS, VMess, Trojan, SOCKS5, HTTP
 sing-box: AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP
 Outbound types: SOCKS5, HTTP, LOCAL source IP
+
+Reconcile:
+  Reads existing Xray/sing-box configs and legacy xrayctl/sbctl metadata.
+  Only ProxyCTL auxiliary metadata is changed; engine JSON is never rewritten.
 
 Uninstall modes:
   default        Remove ProxyCTL manager only; preserve cores and node data.
@@ -281,15 +233,13 @@ _main() {
         client|user) shift || true; cmd_client "$@" ;;
         link|share) shift || true; [[ -n "${1:-}" && -n "${2:-}" ]] || { error 'Usage: proxyctl link <engine> <tag> [user]'; return 1; }; inbound_share "$1" "$2" "${3:-}" ;;
         config) shift || true; cmd_config "$@" ;;
+        reconcile|adopt) shift || true; [[ -z "${1:-}" || "${1:-}" == xray || "${1:-}" == singbox ]] || { error 'Usage: proxyctl reconcile [xray|singbox]'; return 1; }; proxyctl_reconcile "${1:-}" ;;
         cert|tls) shift || true; cmd_cert "$@" ;;
         backup) shift || true; cmd_backup "$@" ;;
         uninstall) shift || true; proxyctl_uninstall "$@" ;;
         start|stop|restart|enable|disable) shift || true; [[ -n "${1:-}" ]] || { error "Usage: proxyctl ${cmd} <engine>"; return 1; }; engine_call "$1" "$cmd" ;;
         logs) shift || true; [[ -n "${1:-}" ]] || { error 'Usage: proxyctl logs <engine> [lines]'; return 1; }; engine_call "$1" logs "${2:-100}" ;;
-        internal-init)
-            metadata_init || { echo 'proxyctl: metadata_init failed' >&2; exit 1; }
-            metadata_validate || { echo 'proxyctl: metadata_validate failed' >&2; exit 1; }
-            ;;
+        internal-init) metadata_init || { echo 'proxyctl: metadata_init failed' >&2; exit 1; }; metadata_validate || { echo 'proxyctl: metadata_validate failed' >&2; exit 1; } ;;
         internal-hy2-hop-restore) singbox_hy2_hop_restore ;;
         internal-hy2-hop-clear) singbox_hy2_hop_clear ;;
         *) echo "proxyctl: unknown command '${cmd}'"; echo 'Run "proxyctl help" for usage.'; exit 1 ;;
@@ -301,27 +251,19 @@ cmd_status() {
     heading 'ProxyCTL Status'
     echo "Version: ${PROXYCTL_VERSION}"
     for engine in xray singbox; do
-        echo ''
-        info "$engine"
+        echo ''; info "$engine"
         if engine_call "$engine" installed; then
-            echo '  Installed: yes'
-            echo "  Version:   $(engine_call "$engine" version 2>/dev/null || echo unknown)"
+            echo '  Installed: yes'; echo "  Version:   $(engine_call "$engine" version 2>/dev/null || echo unknown)"
             if engine_call "$engine" is_active; then echo '  Status:    active'; else echo '  Status:    inactive'; fi
             config=$(inbound_config_file "$engine" 2>/dev/null || true)
             if [[ -n "$config" && -f "$config" ]]; then
                 count=$(jq '.inbounds|length' "$config" 2>/dev/null || echo '?')
                 out_count=$(jq '[.outbounds[]?|select(.tag!="direct" and .tag!="blocked" and .tag!="block")]|length' "$config" 2>/dev/null || echo '?')
-            else
-                count='?'; out_count='?'
-            fi
-            echo "  Inbounds:  ${count}"
-            echo "  Outbounds: ${out_count}"
-        else
-            echo '  Installed: no'
-        fi
+            else count='?'; out_count='?'; fi
+            echo "  Inbounds:  ${count}"; echo "  Outbounds: ${out_count}"
+        else echo '  Installed: no'; fi
     done
-    echo ''
-    echo "Certificates: $(cert_count 2>/dev/null || echo '?')"
+    echo ''; echo "Certificates: $(cert_count 2>/dev/null || echo '?')"
 }
 
 _main "$@"
