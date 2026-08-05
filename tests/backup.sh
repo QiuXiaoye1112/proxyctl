@@ -20,6 +20,12 @@ source "$PROJECT_DIR/lib/common/lock.sh"
 source "$PROJECT_DIR/lib/common/certificate.sh"
 source "$PROJECT_DIR/lib/common/backup.sh"
 
+# apply_candidate validates the engine registry before it reaches engine_call.
+# The suite mocks engine_call intentionally, but must mirror the real entrypoint
+# by registering both supported engines.
+_register_engine xray
+_register_engine singbox
+
 PASS=0; FAIL=0
 pass(){ echo "  PASS: $*"; ((++PASS)); }
 fail(){ echo "  FAIL: $*" >&2; ((++FAIL)); }
