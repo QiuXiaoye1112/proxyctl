@@ -1,4 +1,4 @@
-# ProxyCTL 0.2.0
+# ProxyCTL 0.2.1
 
 Unified proxy manager for Xray and sing-box.
 

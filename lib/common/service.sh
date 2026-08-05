@@ -18,6 +18,15 @@ _service_validate_name() {
     return 0
 }
 
+# --- _service_validate_lines -------------------------------------------------
+# Log line count must be an integer in [1, 10000].
+_service_validate_lines() {
+    local lines="$1"
+    [[ "$lines" =~ ^[0-9]+$ ]] || return 1
+    (( lines >= 1 && lines <= 10000 )) || return 1
+    return 0
+}
+
 # --- _service_require_root ---------------------------------------------------
 # Write operations need root. Returns 1 (does not die) so callers can compose.
 _service_require_root() {
@@ -138,7 +147,9 @@ service_is_enabled() {
     init=$(system_init) || return 1
     case "$init" in
         systemd) systemctl is-enabled --quiet "$service" ;;
-        openrc)  rc-update show | grep -qw "$service" ;;
+        # Exact first-field match — service names may contain "." and "-"
+        # which grep would otherwise treat as regex.
+        openrc)  rc-update show | awk -v svc="$service" '$1 == svc {found=1} END {exit !found}' ;;
     esac
 }
 
@@ -146,8 +157,12 @@ service_is_enabled() {
 # Usage: service_logs <service> [lines]
 service_logs() {
     local service="$1"
-    local lines="${2:-50}"
+    local lines="${2-50}"   # default only when unset, so an explicit "" is rejected
     _service_validate_name "$service" || return 1
+    _service_validate_lines "$lines" || {
+        error "Invalid log line count: ${lines} (must be 1-10000)"
+        return 1
+    }
 
     local init
     init=$(system_init) || return 1

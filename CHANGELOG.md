@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.1] — Unreleased
+
+### Fixed
+
+- service name validation: first character must be alphanumeric, so `.` and
+  `..` (and `.foo`, `../xray`, `/path`) are rejected — no path-traversal
+  through `/etc/init.d/..`
+- OpenRC `service_is_enabled` uses exact first-field matching (awk) instead
+  of regex `grep -w`, so names containing `.`/`-` match exactly
+- `service_logs` validates the line count (integer 1–10000); rejects `0`,
+  negatives, non-numeric, fractional, and explicit-empty values
+- package API (`package_install`/`package_remove`/`package_update_index`)
+  now require root and reject zero package arguments before touching anything
+- `system_os_release_value` handles both `"value"` and `'value'` quoting
+- `ID_LIKE` tokens are scanned in their original order (e.g. `ubuntu debian`
+  → `ubuntu`)
+
+### Changed
+
+- service write-op tests are decoupled from the real EUID via
+  `mock_root`/`mock_non_root` (CI / non-root hosts can run the full suite)
+- package-manager mapping extracted to the pure `_system_package_manager_for_distro`
+- version: 0.2.0 → 0.2.1
+
 ## [0.2.0] — Unreleased
 
 ### Added

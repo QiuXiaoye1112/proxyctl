@@ -220,7 +220,7 @@ reset_log
 service_is_active xray
 assert_eq "$(last_call)" 'rc-service xray status' 'openrc: is_active → rc-service xray status'
 
-# is_enabled: enabled when listed in rc-update show
+# is_enabled: exact first-field match, enabled when listed
 reset_log
 export SERVICE_TEST_RCUP_OUT=' xray | default'
 set +e
@@ -233,7 +233,20 @@ else
     fail 'openrc: is_enabled should be true when listed'
 fi
 
-# is_enabled: not enabled when absent
+# is_enabled: exact match must NOT match a similar-but-different name
+reset_log
+export SERVICE_TEST_RCUP_OUT=' xray-test2 | default'
+set +e
+service_is_enabled xray-test
+near_rc=$?
+set -e
+if (( near_rc != 0 )); then
+    pass 'openrc: is_enabled exact match rejects xray-test2 for xray-test'
+else
+    fail 'openrc: is_enabled should not match a partial name'
+fi
+
+# is_enabled: absent → not enabled
 reset_log
 export SERVICE_TEST_RCUP_OUT=''
 set +e
@@ -271,10 +284,65 @@ else
 fi
 
 # ============================================================================
-# 5. Cleanup
+# 5. service_logs line-count validation
 # ============================================================================
 echo ''
-echo '--- 5. Cleanup ---'
+echo '--- 5. service_logs line validation ---'
+
+export PROXYCTL_TEST_INIT=systemd
+
+for bad in 0 -1 abc 1.5 10001; do
+    reset_log
+    set +e
+    service_logs xray "$bad" > /dev/null 2>&1
+    bad_rc=$?
+    set -e
+    if (( bad_rc != 0 )); then
+        pass "service_logs rejects lines='${bad}'"
+    else
+        fail "service_logs should reject lines='${bad}'"
+    fi
+    assert_eq "$(calls_count)" '0' "no journalctl for lines='${bad}'"
+done
+
+# Explicit empty argument must also be rejected (not defaulted)
+reset_log
+set +e
+service_logs xray '' > /dev/null 2>&1
+empty_rc=$?
+set -e
+if (( empty_rc != 0 )); then
+    pass "service_logs rejects empty lines"
+else
+    fail 'service_logs should reject empty lines'
+fi
+assert_eq "$(calls_count)" '0' 'no journalctl for empty lines'
+
+# Boundary values are accepted
+for ok in 1 50 10000; do
+    reset_log
+    set +e
+    service_logs xray "$ok" > /dev/null 2>&1
+    ok_rc=$?
+    set -e
+    if (( ok_rc == 0 )); then
+        pass "service_logs accepts lines=${ok}"
+    else
+        fail "service_logs should accept lines=${ok}"
+    fi
+    assert_eq "$(last_call)" "journalctl -u xray -n ${ok} --no-pager" "journalctl uses -n ${ok}"
+done
+
+# Default (no arg) is 50
+reset_log
+service_logs xray
+assert_eq "$(last_call)" 'journalctl -u xray -n 50 --no-pager' 'service_logs defaults to 50 lines'
+
+# ============================================================================
+# 6. Cleanup
+# ============================================================================
+echo ''
+echo '--- 6. Cleanup ---'
 
 rm -rf "${MOCK_DIR}"
 
