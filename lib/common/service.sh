@@ -8,9 +8,10 @@
 
 # --- _service_validate_name --------------------------------------------------
 # Service names become command arguments; restrict to safe characters.
+# First character must be alphanumeric so "." and ".." are rejected outright.
 _service_validate_name() {
     local service="$1"
-    [[ -n "$service" && "$service" =~ ^[A-Za-z0-9_.-]+$ ]] || {
+    [[ -n "$service" && "$service" =~ ^[A-Za-z0-9][A-Za-z0-9_.@-]*$ ]] || {
         error "Invalid service name: ${service}"
         return 1
     }

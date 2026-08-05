@@ -28,7 +28,7 @@ fail() { red "  FAIL: $*"; ((++FAILED)); }
 
 assert_eq() { local got="$1" exp="$2"; shift 2 || true; [[ "${got}" == "${exp}" ]] && pass "$*" || fail "$* — expected '${exp}', got '${got}'"; }
 
-# --- mock setup ---------------------------------------------------------------
+# --- mock init system binaries ------------------------------------------------
 MOCK_DIR=$(mktemp -d)
 export SERVICE_TEST_LOG="${MOCK_DIR}/calls.log"
 export SERVICE_TEST_RCUP_OUT=''
@@ -63,14 +63,9 @@ MOCKEOF
 chmod +x "${MOCK_DIR}"/systemctl "${MOCK_DIR}"/journalctl "${MOCK_DIR}"/rc-service "${MOCK_DIR}"/rc-update
 export PATH="${MOCK_DIR}:${PATH}"
 
-reset_log() {
-    : > "${SERVICE_TEST_LOG}"
-}
-
-# last_call — most recent mocked invocation as a string.
-last_call() {
-    tail -1 "${SERVICE_TEST_LOG}"
-}
+reset_log() { : > "${SERVICE_TEST_LOG}"; }
+last_call() { tail -1 "${SERVICE_TEST_LOG}"; }
+calls_count() { wc -l < "${SERVICE_TEST_LOG}" | tr -d ' '; }
 
 echo ''
 echo '================================================================'
@@ -79,20 +74,40 @@ echo '================================================================'
 echo ''
 
 # ============================================================================
-# 1. Invalid service name rejected
+# 1. Service name validation (no command may ever be invoked)
 # ============================================================================
 echo '--- 1. Service name validation ---'
 
-reset_log
-set +e
-service_start '../etc/passwd' > /dev/null 2>&1
-bad_rc=$?
-set -e
-if (( bad_rc != 0 )); then
-    pass 'service_start rejects unsafe service name'
-else
-    fail 'service_start should reject unsafe service name'
-fi
+export PROXYCTL_TEST_INIT=systemd
+
+# Valid names pass validation (write op proceeds to mocked systemctl).
+for good in xray sing-box foo.service foo@bar nginx-1; do
+    reset_log
+    set +e
+    service_start "$good" > /dev/null 2>&1
+    good_rc=$?
+    set -e
+    if (( good_rc == 0 )); then
+        pass "service_start accepts: ${good}"
+    else
+        fail "service_start should accept: ${good} (rc=${good_rc})"
+    fi
+done
+
+# Traversal / dot / space names must be rejected with NO command invocation.
+for bad in '.' '..' '../xray' '/etc/passwd' 'a b' '.foo'; do
+    reset_log
+    set +e
+    service_start "$bad" > /dev/null 2>&1
+    bad_rc=$?
+    set -e
+    if (( bad_rc != 0 )); then
+        pass "service_start rejects: ${bad}"
+    else
+        fail "service_start should reject: ${bad}"
+    fi
+    assert_eq "$(calls_count)" '0' "no command invoked for: ${bad}"
+done
 
 # ============================================================================
 # 2. systemd mapping (forced)
