@@ -13,7 +13,6 @@ readonly _META_ALLOWED_KEYS=(
     firewall
 )
 
-# --- _metadata_require_jq ---------------------------------------------------
 _metadata_require_jq() {
     if ! command -v jq > /dev/null 2>&1; then
         error 'jq is required for metadata operations'
@@ -21,19 +20,13 @@ _metadata_require_jq() {
     fi
 }
 
-# --- metadata_validate_key --------------------------------------------------
-# Usage: metadata_validate_key <key>
-# Only allows whitelisted top-level keys matching [A-Za-z_][A-Za-z0-9_-]*.
 metadata_validate_key() {
     local key="$1"
-
-    # Reject keys with dangerous characters or patterns
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || {
         error "Invalid metadata key: $key"
         return 1
     }
 
-    # Check against allowlist
     local allowed
     for allowed in "${_META_ALLOWED_KEYS[@]}"; do
         [[ "$key" == "$allowed" ]] && return 0
@@ -43,7 +36,6 @@ metadata_validate_key() {
     return 1
 }
 
-# --- metadata_init ----------------------------------------------------------
 metadata_init() {
     mkdir -p "$(dirname "${PROXYCTL_META}")"
 
@@ -66,11 +58,9 @@ EOF
         info "Metadata initialised at ${PROXYCTL_META}"
     fi
 
-    # Always ensure correct permissions
     chmod 600 "${PROXYCTL_META}" 2>/dev/null || true
 }
 
-# --- metadata_validate ------------------------------------------------------
 metadata_validate() {
     if [[ ! -f "${PROXYCTL_META}" ]]; then
         error "Metadata file not found: ${PROXYCTL_META}"
@@ -79,7 +69,6 @@ metadata_validate() {
 
     _metadata_require_jq || return 1
 
-    # Check file is valid JSON
     if ! jq empty "${PROXYCTL_META}" 2>/dev/null; then
         error 'Metadata file is not valid JSON'
         return 1
@@ -96,7 +85,6 @@ metadata_validate() {
         return 1
     fi
 
-    # Ensure required keys exist
     local key
     for key in inbounds certificates firewall; do
         if ! jq -e --arg key "$key" '.[$key]' "${PROXYCTL_META}" > /dev/null 2>&1; then
@@ -108,9 +96,6 @@ metadata_validate() {
     return 0
 }
 
-# --- metadata_get -----------------------------------------------------------
-# Usage: metadata_get <key>
-# Prints the value at <key> to stdout.  Leading dot on key is optional.
 metadata_get() {
     local key="${1#.}"
     _metadata_require_jq || return 1
@@ -119,96 +104,119 @@ metadata_get() {
     jq --arg key "$key" -r '.[$key]' "$PROXYCTL_META"
 }
 
-# --- metadata_set_string ----------------------------------------------------
-# Usage: metadata_set_string <key> <value>
-# Sets <key> to the given string value using jq --arg (safe against injection).
+_metadata_atomic_jq() {
+    local tmp
+    _metadata_require_jq || return 1
+    metadata_init || return 1
+    metadata_validate || return 1
+
+    tmp=$(mktemp "${PROXYCTL_META}.tmp.XXXXXX") || {
+        error 'Failed to create temporary metadata file'
+        return 1
+    }
+
+    local umask_old rc=0
+    umask_old=$(umask)
+    umask 077
+
+    jq "$@" "${PROXYCTL_META}" >"$tmp" || rc=$?
+    if ((rc != 0)) || [[ ! -s "$tmp" ]] || ! jq empty "$tmp" 2>/dev/null; then
+        rm -f -- "$tmp"
+        umask "$umask_old"
+        error 'Metadata update produced invalid JSON'
+        return 1
+    fi
+
+    mv -f -- "$tmp" "$PROXYCTL_META" || {
+        rm -f -- "$tmp"
+        umask "$umask_old"
+        return 1
+    }
+    chmod 600 "$PROXYCTL_META"
+    umask "$umask_old"
+}
+
 metadata_set_string() {
     local key="$1"
     local value="$2"
-    _metadata_require_jq || return 1
     metadata_validate_key "$key" || return 1
-
-    # Create temp file in same directory as metadata for atomic rename
-    local tmp
-    tmp=$(mktemp "${PROXYCTL_META}.tmp.XXXXXX") || {
-        error 'Failed to create temporary file'
-        return 1
-    }
-
-    local umask_old
-    umask_old=$(umask)
-    umask 077
-
-    local rc=0
-    jq --arg key "$key" --arg value "$value" \
-        '.[$key] = $value' "$PROXYCTL_META" > "$tmp" || rc=$?
-
-    if ((rc != 0)); then
-        rm -f "$tmp"
-        umask "${umask_old}"
-        error 'jq failed to update metadata'
-        return 1
-    fi
-
-    # Verify output is non-empty and valid JSON
-    if [[ ! -s "$tmp" ]] || ! jq empty "$tmp" 2>/dev/null; then
-        rm -f "$tmp"
-        umask "${umask_old}"
-        error 'Metadata write produced invalid JSON'
-        return 1
-    fi
-
-    mv "$tmp" "$PROXYCTL_META"
-    chmod 600 "$PROXYCTL_META"
-    umask "${umask_old}"
+    _metadata_atomic_jq --arg key "$key" --arg value "$value" '.[$key] = $value'
 }
 
-# --- metadata_set_json ------------------------------------------------------
-# Usage: metadata_set_json <key> <json>
-# Sets <key> to the given JSON value using jq --argjson (safe against injection).
 metadata_set_json() {
     local key="$1"
     local json="$2"
-    _metadata_require_jq || return 1
     metadata_validate_key "$key" || return 1
-
-    # Create temp file in same directory as metadata for atomic rename
-    local tmp
-    tmp=$(mktemp "${PROXYCTL_META}.tmp.XXXXXX") || {
-        error 'Failed to create temporary file'
-        return 1
-    }
-
-    local umask_old
-    umask_old=$(umask)
-    umask 077
-
-    local rc=0
-    jq --arg key "$key" --argjson value "$json" \
-        '.[$key] = $value' "$PROXYCTL_META" > "$tmp" || rc=$?
-
-    if ((rc != 0)); then
-        rm -f "$tmp"
-        umask "${umask_old}"
-        error 'jq failed to update metadata with JSON value'
-        return 1
-    fi
-
-    # Verify output is non-empty and valid JSON
-    if [[ ! -s "$tmp" ]] || ! jq empty "$tmp" 2>/dev/null; then
-        rm -f "$tmp"
-        umask "${umask_old}"
-        error 'Metadata write produced invalid JSON'
-        return 1
-    fi
-
-    mv "$tmp" "$PROXYCTL_META"
-    chmod 600 "$PROXYCTL_META"
-    umask "${umask_old}"
+    _metadata_atomic_jq --arg key "$key" --argjson value "$json" '.[$key] = $value'
 }
 
-# --- metadata_keys ----------------------------------------------------------
 metadata_keys() {
     _metadata_require_jq || return 1
     jq -r '.inbounds | keys[]' "${PROXYCTL_META}" 2>/dev/null || true
+}
+
+# --- certificate metadata ----------------------------------------------------
+# Certificate records intentionally mirror the mature xrayctl model:
+# identifier (object key) is independent from Certbot's lineage/certName.
+metadata_cert_exists() {
+    local identifier="${1:-}"
+    metadata_init || return 1
+    _metadata_require_jq || return 1
+    jq -e --arg id "$identifier" '.certificates[$id] != null' "$PROXYCTL_META" >/dev/null 2>&1
+}
+
+metadata_cert_set() {
+    local identifier="$1" subject="$2" cert_name="$3" source="$4" validation="$5"
+    local auto_renew="${6:-true}"
+    [[ "$auto_renew" == true || "$auto_renew" == false ]] || {
+        error "Invalid certificate autoRenew value: ${auto_renew}"
+        return 1
+    }
+
+    _metadata_atomic_jq \
+        --arg id "$identifier" \
+        --arg subject "$subject" \
+        --arg certName "$cert_name" \
+        --arg source "$source" \
+        --arg validation "$validation" \
+        --arg autoRenew "$auto_renew" \
+        --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        '.certificates[$id] = {
+            subject: $subject,
+            certName: $certName,
+            source: $source,
+            validation: $validation,
+            autoRenew: ($autoRenew == "true"),
+            updatedAt: $now
+        }'
+}
+
+metadata_cert_get_field() {
+    local identifier="$1" field="$2"
+    case "$field" in
+        subject|certName|source|validation|autoRenew|updatedAt) ;;
+        *) error "Invalid certificate metadata field: ${field}"; return 1 ;;
+    esac
+    metadata_init || return 1
+    _metadata_require_jq || return 1
+    jq -r --arg id "$identifier" --arg field "$field" \
+        '.certificates[$id][$field] // empty' "$PROXYCTL_META"
+}
+
+metadata_cert_list() {
+    metadata_init || return 1
+    _metadata_require_jq || return 1
+    jq -r '.certificates | keys[]' "$PROXYCTL_META" 2>/dev/null
+}
+
+metadata_cert_auto_renew_list() {
+    metadata_init || return 1
+    _metadata_require_jq || return 1
+    jq -r '.certificates | to_entries[] | select(.value.autoRenew == true) | .key' \
+        "$PROXYCTL_META" 2>/dev/null
+}
+
+metadata_cert_delete() {
+    local identifier="$1"
+    _metadata_atomic_jq --arg id "$identifier" 'del(.certificates[$id])'
 }
