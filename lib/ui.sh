@@ -52,6 +52,26 @@ _ui_translate_prompt() {
     esac
 }
 
+_ui_translate_option() {
+    local text="$1"
+    case "$text" in
+        single) printf '%s' '单端口' ;;
+        hopping) printf '%s' '端口跳跃' ;;
+        reality) printf '%s' 'REALITY' ;;
+        tls) printf '%s' 'TLS' ;;
+        none) printf '%s' '无传输安全' ;;
+        off) printf '%s' '关闭' ;;
+        salamander) printf '%s' 'Salamander 混淆' ;;
+        'Local IP') printf '%s' '本机指定出口 IP' ;;
+        direct) printf '%s' 'direct（直连）' ;;
+        http) printf '%s' 'HTTP-01（80 端口）' ;;
+        dns-cloudflare) printf '%s' 'Cloudflare DNS 自动验证' ;;
+        dns-manual) printf '%s' '手动 DNS 验证' ;;
+        both) printf '%s' '全部' ;;
+        *) printf '%s' "$text" ;;
+    esac
+}
+
 heading() {
     local text="$1"
     echo ''
@@ -141,9 +161,10 @@ choose() {
     echo "$prompt"
     echo ''
 
-    local i
+    local i display
     for i in "${!options[@]}"; do
-        printf '  %d) %s\n' "$((i + 1))" "${options[$i]}"
+        display=$(_ui_translate_option "${options[$i]}")
+        printf '  %d) %s\n' "$((i + 1))" "$display"
     done
 
     echo ''
