@@ -9,7 +9,7 @@
 
 # --- network_validate_ipv4 ---------------------------------------------------
 # Strict IPv4 validation: exactly four decimal octets, each 0-255. Leading
-# zeros are accepted as literal text (no octal interpretation).
+# zeros are accepted as literal decimal text (never interpreted as octal).
 network_validate_ipv4() {
     local addr="$1"
     [[ -n "$addr" ]] || return 1
@@ -24,11 +24,12 @@ network_validate_ipv4() {
     local -a octets=($addr)
     (( ${#octets[@]} == 4 )) || return 1
 
-    local oct
+    local oct value
     for oct in "${octets[@]}"; do
         [[ "$oct" =~ ^[0-9]+$ ]] || return 1
         (( ${#oct} <= 3 )) || return 1
-        (( oct <= 255 )) || return 1
+        value=$((10#$oct))
+        (( value <= 255 )) || return 1
     done
     return 0
 }
