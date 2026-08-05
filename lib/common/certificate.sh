@@ -102,9 +102,6 @@ _cert_create_system_group() {
     fi
 }
 
-# Certificate copies use root:<proxyctl-cert> 0640. On systemd, installed
-# engines receive SupplementaryGroups=proxyctl-cert via a drop-in so the same
-# managed pair can be consumed by either engine without world-readable keys.
 _cert_setup_runtime_access() {
     _cert_require_root || return 1
     local group engine service dropin changed=0
@@ -156,8 +153,6 @@ cert_validate_pair_files() {
         <(openssl pkey -in "$key" -pubout 2>/dev/null)
 }
 
-# Same safety pattern as xrayctl: compare -> .new -> validate -> .old -> mv;
-# if either rename fails, restore both sides to their previous state.
 _cert_replace_pair() {
     local id="$1" source_cert="$2" source_key="$3" __changed_var="${4:-}"
     local dir cert_target key_target cert_tmp key_tmp cert_bak key_bak group
@@ -207,8 +202,6 @@ _cert_replace_pair() {
     [[ -n "$__changed_var" ]] && printf -v "$__changed_var" '%s' 1
 }
 
-# Engine-neutral consumer detection: exact managed paths are searched in each
-# real engine config, so this layer does not know Xray/sing-box TLS JSON shape.
 cert_consumers() {
     local id="$1" cert key engine config
     cert=$(cert_fullchain "$id") || return 1
@@ -389,9 +382,6 @@ _cert_issue_domain_cloudflare() {
     certbot_cmd "${args[@]}"
 }
 
-# Optional fourth argument is a previously detected port-80 owner. The caller
-# passes it when recording validation metadata so the branch used for issuance
-# and the stored validation mode are based on the same observation.
 _cert_issue_domain_http() {
     local domain="$1" email="$2" force="$3" owner="${4:-}" args
     [[ -n "$owner" ]] || owner=$(cert_detect_port80_owner)
@@ -527,8 +517,6 @@ _cert_acme_issue_locked() {
     info "Certificate issued and managed: ${identifier}"
 }
 
-# Compatibility with the original ProxyCTL API.
-# cert_acme_issue SUBJECT EMAIL [http|dns-cloudflare|dns-manual] [force=0|1]
 cert_acme_issue() {
     with_lock cert _cert_acme_issue_locked "${1:-}" "${2:-}" "${3:-http}" "${4:-0}"
 }
@@ -595,7 +583,12 @@ cert_list() {
             "$(metadata_cert_get_field "$id" validation)"
     done < <(metadata_cert_list)
 }
-cert_count() { metadata_cert_list | grep -c . 2>/dev/null || printf '%s\n' 0; }
+
+cert_count() {
+    local count
+    count=$(metadata_cert_list | awk 'NF {count++} END {print count+0}')
+    printf '%s\n' "$count"
+}
 
 _cert_renew_one_locked() {
     local identifier="$1" __result_var="${2:-}" cert_name validation source owner service
