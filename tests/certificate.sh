@@ -54,8 +54,6 @@ export PROXYCTL_BIN="${ROOT}/proxyctl"
 mkdir -m 700 -p "$PROXYCTL_LOCK_DIR" "$PROXYCTL_DATA"
 metadata_init >/dev/null
 
-# Unit tests run unprivileged. Bypass only the system ownership plumbing; the
-# pair replacement and all path checks remain real.
 _cert_require_root() { return 0; }
 _cert_setup_runtime_access() {
     [[ ! -L "$PROXYCTL_CERTS" ]] || return 1
@@ -223,9 +221,7 @@ ok metadata_cert_set example.com example.com example.com imported imported false
 bad _cert_delete_locked example.com
 ok metadata_cert_exists example.com
 
-# 13. ACME HTTP metadata and issuance consume one owner observation. A mocked
-# owner sequence would expose the old double-detection bug; the issue helper
-# must receive the exact owner selected by _cert_acme_issue_locked.
+# 13. ACME HTTP metadata and issuance consume one owner observation.
 OWNER_LOG="${ROOT}/owner-log"
 META_LOG="${ROOT}/meta-log"
 cert_exists() { return 1; }
@@ -240,11 +236,8 @@ ok _cert_acme_issue_locked example.com user@example.com http 0
 eqv "$(cat "$OWNER_LOG")" nginx 'HTTP issue helper receives the original owner snapshot'
 has "$(cat "$META_LOG")" $'letsencrypt\thttp-nginx\ttrue' 'metadata matches the actual nginx issuance branch'
 
-# Restore real metadata helpers before the final lock test.
-source "${PROJECT_DIR}/lib/metadata.sh"
-_cert_require_root() { return 0; }
-
-# 14. Real cert-lock contention blocks mutating certificate operations.
+# 14. Real cert-lock contention blocks mutating certificate operations. This
+# path does not use certificate metadata, so the metadata mock above is harmless.
 export CERT_READY="${ROOT}/cert-ready"
 export CERT_RELEASE="${ROOT}/cert-release"
 rm -f "$CERT_READY" "$CERT_RELEASE"
