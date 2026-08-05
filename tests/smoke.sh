@@ -60,6 +60,8 @@ load_all(){
     source "$PROJECT_DIR/lib/singbox/outbound.sh"
     source "$PROJECT_DIR/lib/singbox/hy2_hop.sh"
     source "$PROJECT_DIR/lib/runtime.sh"
+    source "$PROJECT_DIR/lib/reconcile.sh"
+    source "$PROJECT_DIR/lib/uninstall.sh"
     source "$PROJECT_DIR/lib/menu.sh"
 }
 load_all
@@ -80,7 +82,9 @@ contains "$out" 'proxyctl outbound add' 'help exposes outbound management'
 contains "$out" 'proxyctl outbound assign' 'help exposes inbound-to-outbound assignment'
 contains "$out" 'proxyctl client add' 'help exposes user management'
 contains "$out" 'proxyctl core install' 'help exposes core lifecycle'
+contains "$out" 'proxyctl reconcile' 'help exposes existing-config reconciliation'
 contains "$out" 'proxyctl backup' 'help exposes backup management'
+contains "$out" 'proxyctl uninstall' 'help exposes manager uninstall'
 
 # 3. Installed-layout simulation.
 INST="$ROOT/installed"
@@ -145,7 +149,7 @@ bad '_backup_validate_label ../bad' 'backup label rejects traversal'
 ok '_backup_validate_id proxyctl-20260805-120000-123-nightly.tar.gz' 'backup id accepts generated format'
 bad '_backup_validate_id ../../bad.tar.gz' 'backup id rejects traversal'
 
-# 12. Inbound/outbound helper contract.
+# 12. Inbound/outbound/helper contract.
 ok 'inbound_validate_tag node-1' 'inbound tag accepts safe value'
 bad 'inbound_validate_tag ../node' 'inbound tag rejects traversal'
 eqv "$(_xray_spec_protocol SOCKS5)" socks 'Xray SOCKS5 maps to core socks protocol'
@@ -155,6 +159,8 @@ ok 'outbound_validate_tag proxy-1' 'outbound tag accepts safe value'
 bad 'outbound_validate_tag direct' 'reserved outbound tag is rejected'
 eqv "$(_xray_outbound_protocol SOCKS5)" socks 'Xray outbound SOCKS5 maps to socks'
 eqv "$(_singbox_outbound_type HTTP)" http 'sing-box outbound HTTP maps to http'
+eqv "$(reconcile_legacy_xray_meta)" '/usr/local/etc/xray/xrayctl.meta.json' 'xrayctl legacy metadata path mapping'
+eqv "$(reconcile_legacy_singbox_meta)" '/var/lib/sbctl/meta.json' 'sbctl legacy metadata path mapping'
 
 # 13. Random credential primitives.
 hex=$(inbound_random_hex 8)
@@ -167,6 +173,8 @@ bad "bash '$PROJECT_DIR/proxyctl.sh' config check xray" 'Xray config check fails
 bad "bash '$PROJECT_DIR/proxyctl.sh' inbound show xray missing" 'missing inbound show fails closed'
 bad "bash '$PROJECT_DIR/proxyctl.sh' outbound show xray missing" 'missing outbound show fails closed'
 bad "bash '$PROJECT_DIR/proxyctl.sh' client list singbox missing" 'missing user list fails closed'
+bad "bash '$PROJECT_DIR/proxyctl.sh' reconcile nope" 'invalid reconcile engine is rejected'
+bad "bash '$PROJECT_DIR/proxyctl.sh' uninstall --purge" 'destructive purge requires explicit --yes'
 bad "bash '$PROJECT_DIR/proxyctl.sh' something-invalid" 'unknown CLI command returns non-zero'
 
 printf '\nSmoke tests: %d passed, %d failed\n' "$PASS" "$FAIL"
