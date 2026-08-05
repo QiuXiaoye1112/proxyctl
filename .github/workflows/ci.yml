@@ -28,6 +28,9 @@ jobs:
       - name: Core smoke
         run: bash tests/smoke.sh
 
+      - name: UI propagation
+        run: bash tests/ui.sh
+
       - name: Installer transaction
         run: sudo bash tests/installer.sh
 
@@ -99,6 +102,7 @@ jobs:
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
               bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep >/dev/null &&
             bash tests/smoke.sh &&
+            bash tests/ui.sh &&
             bash tests/system.sh &&
             bash tests/service.sh &&
             bash tests/engine_lifecycle.sh &&
@@ -112,6 +116,7 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work alpine:3.23 sh -lc '
             apk add --no-cache bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep openrc >/dev/null &&
             bash tests/smoke.sh &&
+            bash tests/ui.sh &&
             bash tests/system.sh &&
             bash tests/service.sh &&
             bash tests/engine_lifecycle.sh &&
