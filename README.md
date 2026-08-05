@@ -1,4 +1,4 @@
-# ProxyCTL 0.2.3
+# ProxyCTL 0.2.4
 
 Unified proxy manager for Xray and sing-box.
 
@@ -42,7 +42,15 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
   symlink, special-file, foreign-owner, and insecure-parent lock paths are
   rejected before opening. Locks are released automatically by the kernel on
   process exit and lock files are never deleted.
-- **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
+- **Config apply transactions** — `apply_candidate <engine> <candidate>` applies
+  a new Xray / sing-box config safely under the config lock: real core
+  validation (`xray run -test -config` / `sing-box check -c`), same-directory
+  temp + atomic rename, old-permission preservation, and automatic rollback
+  (config restored, service restarted, or removed when there was no previous
+  config) on any failure. Inactive services are validated and replaced but not
+  started. Failed rollback restarts report `[CRITICAL]`
+- **UI library** — `heading`, `info`, `warn`, `error`, `die`, `critical`,
+  `pause`, `confirm`,
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
 - **CLI** — `proxyctl help`, `proxyctl version`, `proxyctl status`, `proxyctl menu`
@@ -51,14 +59,13 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
   installation on any failure. Old artifacts are kept until the final commit.
 - **Test suites** — `smoke.sh` (core contract) plus per-module suites
   (`system.sh`, `service.sh`, `network.sh`, `port.sh`, `lock.sh`,
-  `lock_security.sh`)
+  `lock_security.sh`, `transaction.sh`)
 
 ## Planned (future phases)
 
 - Core installation (Xray, sing-box)
 - Real configuration generation (VLESS, VMess, Trojan, AnyTLS, Hysteria2, …)
 - TLS certificate management (self-signed + ACME)
-- Configuration apply transactions (`apply_candidate`)
 - Backup and restore
 - Firewall setup
 - BBR congestion control
@@ -129,6 +136,10 @@ proxyctl/
   never deleted, and opened without truncation. Symlink parents/files, special
   files, foreign-owned paths, and group/world-writable lock directories are
   rejected before any lock fd is opened.
+- Config apply never overwrites the formal config in place: a same-directory
+  temp file is validated, permissioned, and atomically renamed, so a reader
+  never sees a half-written config. Candidates must be regular files (symlinks
+  rejected), and the config parent must be a real absolute directory
 
 ## Development
 

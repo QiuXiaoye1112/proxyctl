@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.2.4] — Unreleased
+
+### Added
+
+- `apply_candidate <engine> <candidate>` (in `lib/transaction.sh`): safe config
+  apply for Xray / sing-box — config lock → candidate checks → real core
+  validation → backup → same-directory temp + atomic rename → restart +
+  health check → commit, or rollback on any failure
+- real engine validation adapters: `engine_xray_validate` runs
+  `xray run -test -config FILE`; `engine_singbox_validate` runs
+  `sing-box check -c FILE` (no JSON-only fallback; core missing or non-zero
+  validation fails closed)
+- rollback lifecycle: previous config restored atomically (`cp -a` backup kept
+  in the transaction directory), newly applied config removed when there was
+  no previous config, and the service restarted only if it was running before
+- inactive-service semantics: validate + replace only — the service is never
+  started just because a config was applied
+- `[CRITICAL]` message when a rollback restores the config but cannot restart
+  the service (manual intervention required), via new `critical()` in `ui.sh`
+- permission preservation: a replacement keeps the previous file's mode
+  (owner/group best-effort); new configs default to mode 600
+- symlink candidates are rejected; config parent must be a real (non-symlink)
+  absolute directory; the config path always comes from
+  `engine_call <engine> config_file`
+- per-module suite `tests/transaction.sh`: fully mocked `engine_call` recording
+  call order (config_file → validate → is_active → restart → is_active), real
+  flock lock-contention coverage, atomic-replace failure injection, permission
+  preservation, symlink/unknown-engine rejection, and engine CLI arg checks
+- smoke: light `apply_candidate` contract (missing candidate, unknown engine)
+
+### Changed
+
+- version: 0.2.3 → 0.2.4
+- `apply_candidate` stub removed from `core.sh`; the real implementation lives
+  in `lib/transaction.sh` and no longer dies on unknown engines (returns 1)
+- README: config apply transactions moved from Planned to Implemented
+
 ## [0.2.3] — Unreleased
 
 ### Added
