@@ -63,7 +63,9 @@ source "${LIB_DIR}/singbox/engine.sh"
 source "${LIB_DIR}/inbound.sh"
 source "${LIB_DIR}/xray/inbound.sh"
 source "${LIB_DIR}/singbox/inbound.sh"
+source "${LIB_DIR}/singbox/clients.sh"
 source "${LIB_DIR}/singbox/hy2_hop.sh"
+source "${LIB_DIR}/runtime.sh"
 source "${LIB_DIR}/menu.sh"
 
 cmd_cert() {
@@ -97,7 +99,7 @@ cmd_backup() {
     case "$action" in
         create) backup_create "${1:-}" ;;
         list) backup_list ;;
-        restore) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl backup restore <backup-id>'; return 1; }; backup_restore "$1" ;;
+        restore) [[ -n "${1:-}" ]] || { error 'Usage: proxyctl backup restore <backup-id>'; return 1; }; proxyctl_backup_restore "$1" ;;
         *) error "Unknown backup command: ${action}"; return 1 ;;
     esac
 }
