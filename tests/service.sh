@@ -3,8 +3,9 @@
 # tests/service.sh — Phase 2.2 service abstraction test suite
 #
 # Uses mock systemctl / rc-service / rc-update / journalctl injected via PATH.
-# The init system is forced via PROXYCTL_TEST_INIT so tests are deterministic
-# regardless of the host.
+# The init system is forced via PROXYCTL_TEST_INIT and the root check is
+# decoupled via mock_root / mock_non_root, so tests are deterministic
+# regardless of the host (CI or non-root included).
 # ------------------------------------------------------------------------------
 set -o errexit
 set -o nounset
@@ -27,6 +28,12 @@ pass() { green "  PASS: $*"; ((++PASSED)); }
 fail() { red "  FAIL: $*"; ((++FAILED)); }
 
 assert_eq() { local got="$1" exp="$2"; shift 2 || true; [[ "${got}" == "${exp}" ]] && pass "$*" || fail "$* — expected '${exp}', got '${got}'"; }
+
+# --- root mocks ---------------------------------------------------------------
+# Decouple the service write ops from the real EUID.
+mock_root()     { system_is_root() { return 0; }; }
+mock_non_root() { system_is_root() { return 1; }; }
+mock_root
 
 # --- mock init system binaries ------------------------------------------------
 MOCK_DIR=$(mktemp -d)
@@ -110,39 +117,57 @@ for bad in '.' '..' '../xray' '/etc/passwd' 'a b' '.foo'; do
 done
 
 # ============================================================================
-# 2. systemd mapping (forced)
+# 2. Non-root write operations are refused
 # ============================================================================
 echo ''
-echo '--- 2. systemd mapping ---'
+echo '--- 2. Non-root rejection ---'
+
+mock_non_root
+
+for op in start stop restart enable disable; do
+    reset_log
+    set +e
+    "service_${op}" xray > /dev/null 2>&1
+    op_rc=$?
+    set -e
+    if (( op_rc != 0 )); then
+        pass "non-root: service_${op} refused"
+    else
+        fail "non-root: service_${op} should be refused"
+    fi
+    assert_eq "$(calls_count)" '0' "non-root: no command for service_${op}"
+done
+
+mock_root
+
+# ============================================================================
+# 3. systemd mapping (forced, root mocked)
+# ============================================================================
+echo ''
+echo '--- 3. systemd mapping ---'
 
 export PROXYCTL_TEST_INIT=systemd
 
-# Write ops (require root; test host is root)
-if system_is_root; then
-    reset_log
-    service_start xray
-    assert_eq "$(last_call)" 'systemctl start xray' 'systemd: service_start → systemctl start xray'
+reset_log
+service_start xray
+assert_eq "$(last_call)" 'systemctl start xray' 'systemd: service_start → systemctl start xray'
 
-    reset_log
-    service_stop xray
-    assert_eq "$(last_call)" 'systemctl stop xray' 'systemd: service_stop → systemctl stop xray'
+reset_log
+service_stop xray
+assert_eq "$(last_call)" 'systemctl stop xray' 'systemd: service_stop → systemctl stop xray'
 
-    reset_log
-    service_restart xray
-    assert_eq "$(last_call)" 'systemctl restart xray' 'systemd: service_restart → systemctl restart xray'
+reset_log
+service_restart xray
+assert_eq "$(last_call)" 'systemctl restart xray' 'systemd: service_restart → systemctl restart xray'
 
-    reset_log
-    service_enable xray
-    assert_eq "$(last_call)" 'systemctl enable xray' 'systemd: service_enable → systemctl enable xray'
+reset_log
+service_enable xray
+assert_eq "$(last_call)" 'systemctl enable xray' 'systemd: service_enable → systemctl enable xray'
 
-    reset_log
-    service_disable xray
-    assert_eq "$(last_call)" 'systemctl disable xray' 'systemd: service_disable → systemctl disable xray'
-else
-    echo '  (skipping systemd write-op argument tests — requires root)'
-fi
+reset_log
+service_disable xray
+assert_eq "$(last_call)" 'systemctl disable xray' 'systemd: service_disable → systemctl disable xray'
 
-# Read ops
 reset_log
 service_is_active xray
 assert_eq "$(last_call)" 'systemctl is-active --quiet xray' 'systemd: is_active → systemctl is-active --quiet xray'
@@ -159,44 +184,38 @@ reset_log
 service_logs xray 25
 assert_eq "$(last_call)" 'journalctl -u xray -n 25 --no-pager' 'systemd: logs → journalctl -u xray -n 25 --no-pager'
 
-# sing-box hyphenated name passes through unchanged
 reset_log
 service_start sing-box
 assert_eq "$(last_call)" 'systemctl start sing-box' 'systemd: sing-box name passed through'
 
 # ============================================================================
-# 3. OpenRC mapping (forced)
+# 4. OpenRC mapping (forced, root mocked)
 # ============================================================================
 echo ''
-echo '--- 3. OpenRC mapping ---'
+echo '--- 4. OpenRC mapping ---'
 
 export PROXYCTL_TEST_INIT=openrc
 
-if system_is_root; then
-    reset_log
-    service_start xray
-    assert_eq "$(last_call)" 'rc-service xray start' 'openrc: service_start → rc-service xray start'
+reset_log
+service_start xray
+assert_eq "$(last_call)" 'rc-service xray start' 'openrc: service_start → rc-service xray start'
 
-    reset_log
-    service_stop xray
-    assert_eq "$(last_call)" 'rc-service xray stop' 'openrc: service_stop → rc-service xray stop'
+reset_log
+service_stop xray
+assert_eq "$(last_call)" 'rc-service xray stop' 'openrc: service_stop → rc-service xray stop'
 
-    reset_log
-    service_restart xray
-    assert_eq "$(last_call)" 'rc-service xray restart' 'openrc: service_restart → rc-service xray restart'
+reset_log
+service_restart xray
+assert_eq "$(last_call)" 'rc-service xray restart' 'openrc: service_restart → rc-service xray restart'
 
-    reset_log
-    service_enable xray
-    assert_eq "$(last_call)" 'rc-update add xray default' 'openrc: service_enable → rc-update add xray default'
+reset_log
+service_enable xray
+assert_eq "$(last_call)" 'rc-update add xray default' 'openrc: service_enable → rc-update add xray default'
 
-    reset_log
-    service_disable xray
-    assert_eq "$(last_call)" 'rc-update del xray default' 'openrc: service_disable → rc-update del xray default'
-else
-    echo '  (skipping openrc write-op argument tests — requires root)'
-fi
+reset_log
+service_disable xray
+assert_eq "$(last_call)" 'rc-update del xray default' 'openrc: service_disable → rc-update del xray default'
 
-# is_active → rc-service status
 reset_log
 service_is_active xray
 assert_eq "$(last_call)" 'rc-service xray status' 'openrc: is_active → rc-service xray status'
@@ -252,10 +271,10 @@ else
 fi
 
 # ============================================================================
-# 4. Cleanup
+# 5. Cleanup
 # ============================================================================
 echo ''
-echo '--- 4. Cleanup ---'
+echo '--- 5. Cleanup ---'
 
 rm -rf "${MOCK_DIR}"
 
