@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # tests/integration.sh — Phase 2.8 cross-module integration tests
-#
-# Uses real metadata, flock, config transactions, certificate replacement and
-# backup/restore against a temporary filesystem. Only engine processes are
-# mocked; no host proxy service or external network is touched.
 # ------------------------------------------------------------------------------
 set -o errexit
 set -o nounset
@@ -70,7 +66,8 @@ engine_call(){
 }
 
 make_pair(){
-    local name="$1" d="$ROOT/fixture-$name"
+    local name="$1" d=''
+    d="$ROOT/fixture-$name"
     mkdir -p "$d"
     openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=${name}.example.com" \
       -addext "subjectAltName=DNS:${name}.example.com" -keyout "$d/key.pem" -out "$d/cert.pem" >/dev/null 2>&1
@@ -98,8 +95,6 @@ BASE_META=$(jq -c . "$PROXYCTL_META")
 BASE_SERIAL=$(openssl x509 -in "$(cert_fullchain example.com)" -noout -serial)
 
 printf '\nProxyCTL Phase 2.8 Integration Tests\n\n'
-
-# A. Normal cross-module lifecycle.
 BASE_BACKUP=$(backup_create baseline)
 write_config "$ROOT/xray-new.json" xray changed
 write_config "$ROOT/sing-new.json" singbox changed
@@ -119,7 +114,6 @@ eqv "$(jq -r .state "$SING_CFG")" baseline 'backup restore returns sing-box to b
 eqv "$(openssl x509 -in "$(cert_fullchain example.com)" -noout -serial)" "$BASE_SERIAL" 'backup restore returns shared certificate to baseline'
 eqv "$(jq -c . "$PROXYCTL_META")" "$BASE_META" 'backup restore returns metadata to baseline'
 
-# B. Restore failure must preserve the state that existed immediately before it.
 write_config "$ROOT/xray-pre.json" xray pre-restore
 write_config "$ROOT/sing-pre.json" singbox pre-restore
 ok apply_candidate xray "$ROOT/xray-pre.json"
@@ -140,8 +134,6 @@ eqv "$(jq -r .state "$SING_CFG")" pre-restore 'failed restore preserves pre-rest
 eqv "$(openssl x509 -in "$(cert_fullchain example.com)" -noout -serial)" "$PRE_SERIAL" 'failed restore preserves pre-restore certificate'
 eqv "$(jq -c . "$PROXYCTL_META")" "$PRE_META" 'failed restore preserves pre-restore metadata'
 
-# C. Lock ordering: backup holds config first, then cert. A busy cert lock must
-# fail the operation cleanly without leaving an archive.
 READY="$ROOT/cert-ready"; RELEASE="$ROOT/cert-release"
 bash -c "source '$PROJECT_DIR/lib/ui.sh'; source '$PROJECT_DIR/lib/common/lock.sh'; lock_acquire cert || exit 10; touch '$READY'; while [[ ! -f '$RELEASE' ]]; do sleep 0.05; done; lock_release cert" &
 HOLDER=$!
