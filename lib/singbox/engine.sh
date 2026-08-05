@@ -62,15 +62,18 @@ JSON
 }
 
 _engine_singbox_write_service() {
-    local init bin data unit
+    local init bin data unit systemd_dir openrc_dir
     init=$(system_init) || return 1
     bin=$(command -v sing-box) || return 1
     data="${PROXYCTL_SINGBOX_DATA:-/var/lib/sing-box}"
+    systemd_dir="${PROXYCTL_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+    openrc_dir="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}"
     mkdir -p -- "$data" || return 1
     case "$init" in
         systemd)
-            unit="/etc/systemd/system/$(engine_singbox_service_name).service"
+            unit="${systemd_dir}/$(engine_singbox_service_name).service"
             [[ ! -L "$unit" ]] || { error "Refusing symlink service unit: ${unit}"; return 1; }
+            mkdir -p -- "$systemd_dir" || return 1
             cat >"$unit" <<EOF
 [Unit]
 Description=sing-box service managed by ProxyCTL
@@ -94,8 +97,9 @@ EOF
             systemctl daemon-reload
             ;;
         openrc)
-            unit="/etc/init.d/$(engine_singbox_service_name)"
+            unit="${openrc_dir}/$(engine_singbox_service_name)"
             [[ ! -L "$unit" ]] || { error "Refusing symlink OpenRC service: ${unit}"; return 1; }
+            mkdir -p -- "$openrc_dir" || return 1
             cat >"$unit" <<EOF
 #!/sbin/openrc-run
 # managed by ProxyCTL
@@ -113,6 +117,18 @@ EOF
             ;;
         *) error 'Unsupported init system for sing-box service.'; return 1 ;;
     esac
+}
+
+_engine_singbox_sync_runtime() {
+    # If certificates predate the core installation, refresh runtime access now
+    # that the service exists. HY2 hop metadata is also restored after reinstall.
+    if declare -F _cert_setup_runtime_access >/dev/null 2>&1; then
+        _cert_setup_runtime_access || return 1
+    fi
+    if declare -F singbox_hy2_hop_count >/dev/null 2>&1 \
+        && (( $(singbox_hy2_hop_count 2>/dev/null || echo 0) > 0 )); then
+        singbox_hy2_hop_sync || return 1
+    fi
 }
 
 _engine_singbox_install_impl() {
@@ -151,6 +167,7 @@ _engine_singbox_install_impl() {
     engine_singbox_validate "$config" || return 1
     engine_singbox_enable || return 1
     if engine_singbox_is_active; then engine_singbox_restart; else engine_singbox_start; fi
+    _engine_singbox_sync_runtime || return 1
 }
 
 engine_singbox_installed() { command -v sing-box >/dev/null 2>&1; }
@@ -159,21 +176,31 @@ engine_singbox_install() { _engine_singbox_install_impl "${1:-}"; }
 engine_singbox_update() { _engine_singbox_install_impl "${1:-}"; }
 
 engine_singbox_uninstall() {
-    local unit init
+    local unit init systemd_dir openrc_dir
     _engine_singbox_require_root || return 1
     engine_singbox_installed || { info 'sing-box is not installed.'; return 0; }
     engine_singbox_stop >/dev/null 2>&1 || true
     engine_singbox_disable >/dev/null 2>&1 || true
+
+    # Remove runtime redirect state before removing the core. Metadata remains so
+    # reinstalling sing-box can reconstruct the same hopping configuration.
+    if declare -F singbox_hy2_hop_clear >/dev/null 2>&1; then
+        singbox_hy2_hop_clear || { error 'Unable to clear Hysteria2 hop rules; refusing to leave stale redirects behind.'; return 1; }
+        declare -F _singbox_hy2_hop_boot_service_remove >/dev/null 2>&1 && _singbox_hy2_hop_boot_service_remove
+    fi
+
     package_remove sing-box || return 1
     init=$(system_init 2>/dev/null || true)
+    systemd_dir="${PROXYCTL_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+    openrc_dir="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}"
     case "$init" in
         systemd)
-            unit="/etc/systemd/system/$(engine_singbox_service_name).service"
+            unit="${systemd_dir}/$(engine_singbox_service_name).service"
             if [[ -f "$unit" ]] && grep -q 'managed by ProxyCTL' "$unit" 2>/dev/null; then rm -f -- "$unit"; fi
             systemctl daemon-reload >/dev/null 2>&1 || true
             ;;
         openrc)
-            unit="/etc/init.d/$(engine_singbox_service_name)"
+            unit="${openrc_dir}/$(engine_singbox_service_name)"
             if [[ -f "$unit" ]] && grep -q 'managed by ProxyCTL' "$unit" 2>/dev/null; then rm -f -- "$unit"; fi
             ;;
     esac
