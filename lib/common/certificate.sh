@@ -156,7 +156,7 @@ cert_validate_pair_files() {
 _cert_replace_pair() {
     local id="$1" source_cert="$2" source_key="$3" __changed_var="${4:-}"
     local dir cert_target key_target cert_tmp key_tmp cert_bak key_bak group
-    local had_cert=0 had_key=0 need_rollback=0 changed=0
+    local had_cert=0 had_key=0 need_rollback=0 pair_changed=0
 
     cert_validate_pair_files "$source_cert" "$source_key" || { error 'Certificate or private key is invalid or mismatched.'; return 1; }
     _cert_prepare_directory "$id" || return 1
@@ -165,8 +165,8 @@ _cert_replace_pair() {
     group=$(cert_runtime_group)
 
     [[ ! -L "$cert_target" && ! -L "$key_target" ]] || { error "Refusing symlink certificate files in ${dir}"; return 1; }
-    if ! cmp -s "$source_cert" "$cert_target" 2>/dev/null || ! cmp -s "$source_key" "$key_target" 2>/dev/null; then changed=1; fi
-    if (( changed == 0 )); then
+    if ! cmp -s "$source_cert" "$cert_target" 2>/dev/null || ! cmp -s "$source_key" "$key_target" 2>/dev/null; then pair_changed=1; fi
+    if (( pair_changed == 0 )); then
         [[ -n "$__changed_var" ]] && printf -v "$__changed_var" '%s' 0
         return 0
     fi
