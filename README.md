@@ -1,34 +1,57 @@
-# ProxyCTL
+# ProxyCTL 0.1.0
 
 Unified proxy manager for Xray and sing-box.
 
-## Overview
+> **Phase 1 — Architecture Skeleton**
 
-ProxyCTL provides a single, consistent interface for managing both Xray and
-sing-box proxy cores. It handles installation, configuration generation,
-service management, TLS certificates, and system optimisation.
+## Implemented
 
-## Phase 1 — Architecture Skeleton
+- **Project skeleton** with strict module boundaries
+- **Engine Registry** — unified `engine_call xray|singbox <method>` dispatcher
+- **Engine API** — both engines expose all 14 standard methods (mostly stubs)
+- **Capability system** — V1 protocol and transport definitions (no hard-coded menus)
+- **Menu skeleton** — interactive terminal UI with inbound creation wizard
+- **Metadata** — JSON-backed persistent state at `/var/lib/proxyctl/meta.json`
+- **Transaction framework** — atomic staging with commit/rollback
+- **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
+  `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
+  `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
+- **CLI** — `proxyctl help`, `proxyctl version`, `proxyctl status`, `proxyctl menu`
+- **Smoke test suite** — 79+ automated assertions
+- **Bash 3.2+ compatible**
 
-This phase establishes the project skeleton, module boundaries, Engine API,
-capability system, and terminal menu framework.
+## Planned (future phases)
 
-### Directory Layout
+- Core installation (Xray, sing-box)
+- Real configuration generation (VLESS, VMess, Trojan, AnyTLS, Hysteria2, …)
+- TLS certificate management (self-signed + ACME)
+- Service operations (start/stop/restart/enable/disable via systemd)
+- Backup and restore
+- Firewall setup
+- BBR congestion control
+- Migration from xrayctl / sbctl
+
+## V1 Capabilities
+
+| Engine    | Protocols                          |
+|-----------|------------------------------------|
+| Xray      | VLESS, VMess, Trojan, SOCKS5, HTTP |
+| sing-box  | AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP |
+
+## Directory Layout
 
 ```text
 proxyctl/
-├── proxyctl.sh          # Entry point / CLI dispatcher
-├── install.sh           # System installer
-├── README.md
-├── CHANGELOG.md
+├── proxyctl.sh              # CLI entry point / dispatcher
+├── install.sh               # System installer (ProxyCTL only)
 ├── lib/
-│   ├── core.sh          # Engine dispatcher (engine_call)
-│   ├── ui.sh            # Terminal UI primitives
-│   ├── capability.sh    # V1 protocol & transport definitions
-│   ├── metadata.sh      # /var/lib/proxyctl/meta.json management
-│   ├── transaction.sh   # Atomic config transactions
-│   ├── menu.sh          # Interactive menus
-│   ├── common/
+│   ├── core.sh              # Engine dispatcher
+│   ├── ui.sh                # Terminal UI primitives
+│   ├── capability.sh        # Protocol & transport definitions
+│   ├── metadata.sh          # Persistent state management
+│   ├── transaction.sh       # Config transactions
+│   ├── menu.sh              # Interactive menus
+│   ├── common/              # Shared utilities
 │   │   ├── system.sh
 │   │   ├── network.sh
 │   │   ├── port.sh
@@ -36,78 +59,34 @@ proxyctl/
 │   │   ├── certificate.sh
 │   │   ├── backup.sh
 │   │   └── bbr.sh
-│   ├── xray/
-│   │   └── engine.sh
-│   └── singbox/
-│       └── engine.sh
-└── tests/
-    └── smoke.sh
+│   ├── xray/engine.sh       # Xray engine
+│   └── singbox/engine.sh    # sing-box engine
+└── tests/smoke.sh           # Test suite
 ```
 
-### CLI Commands
+## System Paths
 
-```bash
-proxyctl              # Interactive menu
-proxyctl help         # Usage information
-proxyctl version      # Show version
-proxyctl status       # Show engine status
-```
-
-### Engine API
-
-Each engine (`xray`, `singbox`) implements a uniform API:
-
-| Method              | Description                    |
-|---------------------|--------------------------------|
-| `installed`         | Check if engine is installed   |
-| `version`           | Get engine version             |
-| `install`           | Install engine (stub)          |
-| `update`            | Update engine (stub)           |
-| `uninstall`         | Uninstall engine (stub)        |
-| `start`             | Start engine service (stub)    |
-| `stop`              | Stop engine service (stub)     |
-| `restart`           | Restart engine service (stub)  |
-| `enable`            | Enable auto-start (stub)       |
-| `disable`           | Disable auto-start (stub)      |
-| `is_active`         | Check if service is running    |
-| `validate`          | Validate config file (stub)    |
-| `logs`              | View engine logs (stub)        |
-| `config_file`       | Return path to config file     |
-| `service_name`      | Return systemd service name    |
-
-Dispatch via `engine_call <engine> <method> [args...]`.
-
-### V1 Capabilities
-
-**Xray** — VLESS, VMess, Trojan, SOCKS5, HTTP  
-**sing-box** — AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP
-
-### Paths
-
-| Path                         | Purpose               |
-|------------------------------|-----------------------|
-| `/usr/local/sbin/proxyctl`   | Binary                |
-| `/usr/local/lib/proxyctl/`   | Library               |
-| `/var/lib/proxyctl/`         | Runtime data          |
-| `/var/lib/proxyctl/meta.json`| Metadata              |
-| `/etc/proxyctl/certs/`       | TLS certificates      |
-| `/var/backups/proxyctl/`     | Backups               |
-| `/run/lock/proxyctl.lock`    | Lock file             |
-| `/usr/local/etc/xray/config.json` | Xray config      |
-| `/etc/sing-box/config.json`  | sing-box config       |
-
-## Requirements
-
-- Bash 4.0+
-- `jq` (for metadata operations)
-- `flock` (for advisory locking)
+| Path                              | Purpose        |
+|-----------------------------------|----------------|
+| `/usr/local/sbin/proxyctl`        | Binary         |
+| `/usr/local/bin/proxyctl`         | Symlink        |
+| `/usr/local/lib/proxyctl/`        | Library        |
+| `/var/lib/proxyctl/meta.json`     | Metadata       |
+| `/etc/proxyctl/certs/`            | Certificates   |
+| `/var/backups/proxyctl/`          | Backups        |
+| `/run/lock/proxyctl.lock`         | Lock file      |
 
 ## Development
 
-Set `PROXYCTL_DEV_LIB` to use a local library directory:
-
 ```bash
-PROXYCTL_DEV_LIB=./lib ./proxyctl.sh
+# Source-checkout mode
+PROXYCTL_DEV_LIB=./lib ./proxyctl.sh version
+
+# Simulate installed layout
+PROXYCTL_LIB=./lib ./proxyctl.sh version
+
+# Run tests
+bash tests/smoke.sh
 ```
 
 ## License

@@ -1,33 +1,39 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # menu.sh — Interactive terminal menus
+#
+# All user input goes through ui.sh primitives: choose, confirm, prompt_value,
+# prompt_optional, prompt_secret, pause.
+# Direct read is never used in this file.
 # ------------------------------------------------------------------------------
 
 # --- menu_main --------------------------------------------------------------
 menu_main() {
     while true; do
         heading 'ProxyCTL'
-        echo '  1) Inbound Management'
-        echo '  2) Outbound Management'
-        echo '  3) TLS Certificates'
-        echo '  4) Core Management'
-        echo '  5) System Tools'
-        echo '  6) Backup & Restore'
-        echo '  0) Exit'
-        echo ''
 
         local choice
-        read -r -p 'Select [0-6]: ' choice
+        choose choice 'Main Menu' \
+            'Inbound Management' \
+            'Outbound Management' \
+            'TLS Certificates' \
+            'Core Management' \
+            'System Tools' \
+            'Backup & Restore' \
+            'Exit' || {
+            echo 'Goodbye.'
+            exit 0
+        }
 
         case "${choice}" in
-            1) menu_inbound_new ;;
-            2) echo 'Outbound management is not yet implemented.'; pause ;;
-            3) echo 'TLS certificate management is not yet implemented.'; pause ;;
-            4) menu_core ;;
-            5) menu_system ;;
-            6) echo 'Backup & restore is not yet implemented.'; pause ;;
-            0) echo 'Goodbye.'; exit 0 ;;
-            *) warn "Invalid selection: ${choice}" ;;
+            'Inbound Management')   menu_inbound_new ;;
+            'Outbound Management')  echo 'Outbound management is not yet implemented.'; pause ;;
+            'TLS Certificates')     echo 'TLS certificate management is not yet implemented.'; pause ;;
+            'Core Management')      menu_core ;;
+            'System Tools')         menu_system ;;
+            'Backup & Restore')     echo 'Backup & restore is not yet implemented.'; pause ;;
+            'Exit')                 echo 'Goodbye.'; exit 0 ;;
+            *)                      warn "Unexpected selection: ${choice}" ;;
         esac
     done
 }
@@ -49,7 +55,7 @@ menu_inbound_new() {
     fi
 
     local engine
-    engine=$(choose 'Select core:' "${engines[@]}") || return
+    choose engine 'Select core:' "${engines[@]}" || return
 
     # Step 2: choose protocol
     local protocols=()
@@ -58,7 +64,7 @@ menu_inbound_new() {
     done < <(engine_protocols "${engine}")
 
     local protocol
-    protocol=$(choose "Select protocol for ${engine}:" "${protocols[@]}") || return
+    choose protocol "Select protocol for ${engine}:" "${protocols[@]}" || return
 
     # Step 3: transport (if applicable)
     local transport=''
@@ -68,7 +74,7 @@ menu_inbound_new() {
             transports+=("${tr}")
         done < <(protocol_transports "${engine}" "${protocol}")
 
-        transport=$(choose "Select transport for ${engine} / ${protocol}:" "${transports[@]}") || return
+        choose transport "Select transport for ${engine} / ${protocol}:" "${transports[@]}" || return
     fi
 
     # Step 4: print result
@@ -88,30 +94,27 @@ menu_inbound_new() {
 menu_core() {
     heading 'Core Management'
 
-    echo '  1) View core status'
-    echo '  2) Install a core'
-    echo '  3) Uninstall a core'
-    echo '  4) Update a core'
-    echo '  5) Start a core'
-    echo '  6) Stop a core'
-    echo '  7) Restart a core'
-    echo '  8) Enable auto-start'
-    echo '  9) Disable auto-start'
-    echo '  0) Back'
-    echo ''
-
     local choice
-    read -r -p 'Select [0-9]: ' choice
+    choose choice 'Core Management' \
+        'View core status' \
+        'Install a core' \
+        'Uninstall a core' \
+        'Update a core' \
+        'Start a core' \
+        'Stop a core' \
+        'Restart a core' \
+        'Enable auto-start' \
+        'Disable auto-start' \
+        'Back' || return
 
     case "${choice}" in
-        1) cmd_status; pause ;;
-        2|3|4|5|6|7|8|9)
+        'View core status')      cmd_status; pause ;;
+        'Back')                  return ;;
+        *)
             echo 'Core management operations are not yet implemented.'
             echo 'Available in a future phase.'
             pause
             ;;
-        0) return ;;
-        *) warn "Invalid selection: ${choice}" ;;
     esac
 }
 
@@ -119,22 +122,19 @@ menu_core() {
 menu_system() {
     heading 'System Tools'
 
-    echo '  1) Enable BBR'
-    echo '  2) Check BBR status'
-    echo '  3) Firewall setup'
-    echo '  0) Back'
-    echo ''
-
     local choice
-    read -r -p 'Select [0-3]: ' choice
+    choose choice 'System Tools' \
+        'Enable BBR' \
+        'Check BBR status' \
+        'Firewall setup' \
+        'Back' || return
 
     case "${choice}" in
-        1|2|3)
+        'Back') return ;;
+        *)
             echo 'System tools are not yet implemented.'
             echo 'Available in a future phase.'
             pause
             ;;
-        0) return ;;
-        *) warn "Invalid selection: ${choice}" ;;
     esac
 }

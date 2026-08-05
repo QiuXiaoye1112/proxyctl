@@ -91,12 +91,13 @@ engine_singbox_is_active() {
 engine_singbox_validate() {
     local config_file="${1:-${SINGBOX_CONFIG}}"
     # Stub — will run `sing-box check` in a future phase.
+    # Fail closed: unimplemented validation must not report success.
     if [[ ! -f "${config_file}" ]]; then
         error "Config file not found: ${config_file}"
         return 1
     fi
-    info 'sing-box config validation is not yet implemented (stub).'
-    return 0
+    error 'sing-box config validation is not implemented.'
+    return 1
 }
 
 # --- engine_singbox_logs ----------------------------------------------------

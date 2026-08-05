@@ -13,22 +13,6 @@ _register_engine() {
 }
 
 # The standard API every engine must expose:
-#   engine_installed
-#   engine_version
-#   engine_install
-#   engine_update
-#   engine_uninstall
-#   engine_start
-#   engine_stop
-#   engine_restart
-#   engine_enable
-#   engine_disable
-#   engine_is_active
-#   engine_validate
-#   engine_logs
-#   engine_config_file
-#   engine_service_name
-
 _KNOWN_ENGINE_APIS=(
     installed version install update uninstall
     start stop restart enable disable
@@ -72,6 +56,45 @@ engine_require() {
     if ! engine_exists "${engine}"; then
         die "Unknown engine: ${engine}"
     fi
+}
+
+# --- engine_validate_registration -------------------------------------------
+# Usage: engine_validate_registration <engine>
+# Verifies every method in _KNOWN_ENGINE_APIS is implemented.
+# Returns 0 if all methods present, 1 with error messages if any missing.
+engine_validate_registration() {
+    local engine="$1"
+    local errors=0
+    local method
+
+    for method in "${_KNOWN_ENGINE_APIS[@]}"; do
+        local func="engine_${engine}_${method}"
+        if ! declare -F "${func}" > /dev/null 2>&1; then
+            error "Engine '${engine}' missing required API: ${method}"
+            ((errors++))
+        fi
+    done
+
+    return "${errors}"
+}
+
+# --- apply_candidate --------------------------------------------------------
+# Usage: apply_candidate <engine> <candidate>
+# Installs a candidate configuration for the given engine.
+# Phase 1 stub — always fails closed.
+apply_candidate() {
+    local engine="$1"
+    local candidate="$2"
+
+    engine_require "${engine}"
+
+    [[ -f "${candidate}" ]] || {
+        error "Candidate does not exist: ${candidate}"
+        return 1
+    }
+
+    error 'Configuration apply is not implemented in Phase 1.'
+    return 1
 }
 
 # --- protocol helpers (delegates to capability.sh) -------------------------

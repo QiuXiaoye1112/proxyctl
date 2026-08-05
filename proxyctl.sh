@@ -6,7 +6,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-readonly PROXYCTL_VERSION='1.0.0'
+readonly PROXYCTL_VERSION='0.1.0'
 
 # --- paths ----------------------------------------------------------------
 readonly PROXYCTL_BIN="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}"
@@ -20,11 +20,16 @@ readonly PROXYCTL_LOCK="${PROXYCTL_LOCK:-/run/lock/proxyctl.lock}"
 readonly XRAY_CONFIG='/usr/local/etc/xray/config.json'
 readonly SINGBOX_CONFIG='/etc/sing-box/config.json'
 
-# Resolve LIB_DIR relative to the script, with an override for development.
+# Resolve LIB_DIR with a 3-way fallback:
+#   1. PROXYCTL_DEV_LIB — development override
+#   2. Sibling lib/ directory relative to the script — source checkout
+#   3. PROXYCTL_LIB (default /usr/local/lib/proxyctl) — installed layout
 if [[ -n "${PROXYCTL_DEV_LIB:-}" ]]; then
     readonly LIB_DIR="${PROXYCTL_DEV_LIB}"
-else
+elif [[ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib" ]]; then
     readonly LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+else
+    readonly LIB_DIR="${PROXYCTL_LIB}"
 fi
 
 # --- module loading --------------------------------------------------------
@@ -91,6 +96,10 @@ _main() {
             ;;
         menu)
             menu_main
+            ;;
+        internal-init)
+            metadata_init
+            metadata_validate || true
             ;;
         *)
             echo "proxyctl: unknown command '${cmd}'"

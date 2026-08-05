@@ -92,12 +92,13 @@ engine_xray_is_active() {
 engine_xray_validate() {
     local config_file="${1:-${XRAY_CONFIG}}"
     # Stub — will run `xray -test` in a future phase.
+    # Fail closed: unimplemented validation must not report success.
     if [[ ! -f "${config_file}" ]]; then
         error "Config file not found: ${config_file}"
         return 1
     fi
-    info 'Xray config validation is not yet implemented (stub).'
-    return 0
+    error 'Xray config validation is not implemented.'
+    return 1
 }
 
 # --- engine_xray_logs -------------------------------------------------------
