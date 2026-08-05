@@ -322,14 +322,9 @@ assert_fail "run_meta 'bbr_enable' 2>/dev/null" \
 assert_fail "run_meta 'cert_acme_issue example.com' 2>/dev/null" \
     'cert_acme_issue fails closed'
 
-assert_fail "run_meta 'network_check_port 443' 2>/dev/null" \
-    'network_check_port fails closed'
-
-assert_fail "run_meta 'port_is_free 443' 2>/dev/null" \
-    'port_is_free fails closed'
-
-assert_fail "run_meta 'port_allocate 8080' 2>/dev/null" \
-    'port_allocate fails closed'
+# network_check_port, port_is_free, and port_allocate are no longer stubs —
+# network.sh / port.sh are real implementations covered by tests/network.sh
+# and tests/port.sh.
 
 assert_fail "run_meta 'apply_candidate xray /nonexistent/path' 2>/dev/null" \
     'apply_candidate fails closed'
@@ -1195,6 +1190,19 @@ else
 
     rm -rf "$INSTALL_TEST_BASE"
 fi
+
+# ============================================================================
+# 30. Network / Port contract (light)
+# ============================================================================
+echo ''
+echo '--- 30. Network / Port contract ---'
+
+assert_ok "run_meta 'network_validate_ipv4 127.0.0.1'" 'network_validate_ipv4 accepts loopback'
+assert_fail "run_meta 'network_validate_ipv4 999.1.1.1' 2>/dev/null" 'network_validate_ipv4 rejects bad octet'
+assert_ok "run_meta 'network_validate_ip 2001:db8::1'" 'network_validate_ip accepts IPv6'
+assert_ok "run_meta 'port_validate 443'" 'port_validate accepts 443'
+assert_fail "run_meta 'port_validate 0' 2>/dev/null" 'port_validate rejects 0'
+assert_fail "run_meta 'port_validate 65536' 2>/dev/null" 'port_validate rejects 65536'
 
 # ============================================================================
 # Summary
