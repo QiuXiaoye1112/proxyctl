@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.2.7] — Unreleased
+
+### Added
+
+- `tests/integration.sh`: Phase 2 cross-module lifecycle coverage using real
+  metadata writes, `flock`, config transactions, certificate replacement and
+  portable backup/restore against a temporary filesystem; only the external
+  engine process boundary is mocked
+- normal integration lifecycle: create a baseline backup, apply new Xray and
+  sing-box configs, rotate the shared certificate, update metadata, then
+  restore and verify both configs, certificate and metadata return to baseline
+- failure integration lifecycle: inject an engine restart failure during
+  restore and verify the Backup layer restores the complete pre-restore state
+  after `apply_candidate` performs its own local rollback
+- lock-order integration coverage proving a busy certificate lock makes backup
+  creation fail cleanly without leaving a partial archive
+- `.github/workflows/ci.yml`: Ubuntu CI definition covering Bash syntax plus
+  smoke, system, service, network, port, lock, lock-security, transaction,
+  certificate, backup and integration suites on pushes and pull requests
+
+### Changed
+
+- version: 0.2.6 → 0.2.7
+- `tests/smoke.sh` now reflects the completed Phase 2 contract and includes a
+  light portable-backup contract in addition to the existing module checks
+- README marks Phase 2 Common Infrastructure complete and documents the final
+  common-infrastructure boundaries and test stack
+
+## [0.2.6] — Unreleased
+
+### Added
+
+- portable backup/restore in `lib/common/backup.sh` for the state required to
+  preserve node identity across VPS migration: ProxyCTL metadata, both engine
+  configs when present, all metadata-managed certificate pairs, and optional
+  Cloudflare credentials
+- `proxyctl backup create [label]`, `proxyctl backup list`, and
+  `proxyctl backup restore <backup-id>` CLI commands
+- mode-600 `proxyctl-YYYYMMDD-HHMMSS-RANDOM[-label].tar.gz` archives under
+  `/var/backups/proxyctl/`, with a format-versioned manifest
+- restore validation for archive member names/types, metadata schema,
+  certificate/private-key pairs and installed-engine configs
+- restore reuses the existing `_cert_replace_pair` and `apply_candidate`
+  transaction paths rather than maintaining separate certificate/config apply
+  implementations
+- pre-restore state snapshot and whole-operation rollback; if that rollback
+  also fails, both recovery trees are retained and a `[CRITICAL]` diagnostic is
+  emitted for manual recovery
+- `tests/backup.sh`: portable archive contents/permissions, full state round
+  trip and real config-lock contention coverage
+
+### Security
+
+- backup creation and restore take locks in the fixed order `config → cert`
+- backup labels/IDs and archive members use strict allowlists; path traversal,
+  archive links and special files are rejected before extraction
+- symlink config/certificate/credential sources are rejected
+- archives and Cloudflare credential copies remain mode 600
+
+### Changed
+
+- version: 0.2.5 → 0.2.6
+- Certbot's venv, logs, work directory and lineage database are intentionally
+  excluded because they are rebuildable machine-local state; restored managed
+  certificate files remain immediately usable, while ACME certificates should
+  be reissued on the destination before the next renewal
+
 ## [0.2.5] — Unreleased
 
 ### Added
@@ -263,7 +330,6 @@
 - data directory permissions: `/var/lib/proxyctl` 700, `/etc/proxyctl/certs` 700,
   `/var/backups/proxyctl` 700
 - add `require_runtime_dependencies` with Bash 4.0+ check
-- add `transaction_root()` as canonical source for transaction root path
 
 ### Changed
 - version: 0.1.0 → 0.1.1
