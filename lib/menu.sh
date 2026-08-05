@@ -221,7 +221,7 @@ menu_backup() {
                 ((${#ids[@]})) || { warn 'No backups found.'; pause; continue; }
                 if ((${#ids[@]} == 1)); then id=${ids[0]}; else choose id 'Select backup:' "${ids[@]}" || continue; fi
                 confirm answer "Restore ${id}? Current state will be snapshotted for rollback." n || continue
-                [[ "$answer" == y ]] && menu_action backup_restore "$id"
+                [[ "$answer" == y ]] && menu_action proxyctl_backup_restore "$id"
                 ;;
             'Back') return ;;
         esac
