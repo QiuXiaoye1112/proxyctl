@@ -34,8 +34,18 @@ system_arch() {
     _system_arch_from_machine "$(uname -m)"
 }
 
+# --- _system_os_release_unquote ---------------------------------------------
+# Strips a leading/trailing single or double quote pair from a value.
+_system_os_release_unquote() {
+    local val="$1"
+    val="${val%[\"\']}"
+    val="${val#[\"\']}"
+    printf '%s' "$val"
+}
+
 # --- system_os_release_value ------------------------------------------------
 # Reads a key from /etc/os-release. Value is lowercased and quotes stripped.
+# Supports both "value" and 'value' quoting styles.
 system_os_release_value() {
     local key="$1"
     local file='/etc/os-release'
@@ -45,8 +55,7 @@ system_os_release_value() {
     val=$(sed -n "s/^${key}=//p" "$file" | head -1)
     [[ -n "$val" ]] || return 1
 
-    val="${val%\"}"
-    val="${val#\"}"
+    val=$(_system_os_release_unquote "$val")
     printf '%s' "$val" | tr '[:upper:]' '[:lower:]'
 }
 
@@ -54,6 +63,26 @@ system_os_release_value() {
 # Raw lowercase ID from /etc/os-release (e.g. debian, rocky).
 system_distro_id() {
     system_os_release_value 'ID'
+}
+
+# --- _system_distro_from_like ------------------------------------------------
+# Scans ID_LIKE tokens in their original order and returns the first supported
+# distro. e.g. ID_LIKE="ubuntu debian" → ubuntu.
+_system_distro_from_like() {
+    local like="$1"
+    local tok
+    local -a tokens=()
+    read -r -a tokens <<< "$like"
+
+    for tok in "${tokens[@]}"; do
+        case "$tok" in
+            debian|ubuntu|alpine|centos|rocky|almalinux|fedora|arch|rhel)
+                printf '%s\n' "$tok"
+                return 0
+                ;;
+        esac
+    done
+    return 1
 }
 
 # --- system_distro -----------------------------------------------------------
@@ -78,15 +107,11 @@ system_distro() {
             ;;
     esac
 
-    # Fall back to ID_LIKE (e.g. Linux Mint → ubuntu).
+    # Fall back to ID_LIKE, honouring its original token order.
     like=$(system_os_release_value 'ID_LIKE' 2>/dev/null || true)
-    local token
-    for token in debian ubuntu alpine centos rocky almalinux fedora arch; do
-        if [[ "${like:-}" == *"${token}"* ]]; then
-            printf '%s\n' "$token"
-            return 0
-        fi
-    done
+    if _system_distro_from_like "$like"; then
+        return 0
+    fi
 
     error "Unsupported distribution: ${id}"
     return 1
@@ -119,27 +144,41 @@ system_init() {
     fi
 }
 
+# --- _system_has_dnf ---------------------------------------------------------
+_system_has_dnf() {
+    command -v dnf > /dev/null 2>&1
+}
+
+# --- _system_package_manager_for_distro --------------------------------------
+# Pure mapping from a distro name to its package manager. Testable without
+# depending on the host machine.
+_system_package_manager_for_distro() {
+    local distro="$1"
+    case "$distro" in
+        debian|ubuntu) printf '%s\n' 'apt' ;;
+        alpine)        printf '%s\n' 'apk' ;;
+        fedora)        printf '%s\n' 'dnf' ;;
+        centos|rocky|almalinux|rhel)
+            if _system_has_dnf; then
+                printf '%s\n' 'dnf'
+            else
+                printf '%s\n' 'yum'
+            fi
+            ;;
+        arch) printf '%s\n' 'pacman' ;;
+        *)
+            printf '%s\n' 'unknown'
+            return 1
+            ;;
+    esac
+}
+
 # --- system_package_manager --------------------------------------------------
 # Distro-driven package manager. Falls back to command detection.
 system_package_manager() {
     local distro pm
     if distro=$(system_distro 2>/dev/null); then
-        case "$distro" in
-            debian|ubuntu) pm='apt' ;;
-            alpine)        pm='apk' ;;
-            fedora)        pm='dnf' ;;
-            centos|rocky|almalinux|rhel)
-                if command -v dnf > /dev/null 2>&1; then
-                    pm='dnf'
-                else
-                    pm='yum'
-                fi
-                ;;
-            arch) pm='pacman' ;;
-            *)    pm='unknown' ;;
-        esac
-
-        if [[ "$pm" != 'unknown' ]]; then
+        if pm=$(_system_package_manager_for_distro "$distro" 2>/dev/null) && [[ "$pm" != 'unknown' ]]; then
             printf '%s\n' "$pm"
             return 0
         fi
@@ -162,9 +201,21 @@ system_package_manager() {
     fi
 }
 
+# --- _package_require_root ---------------------------------------------------
+# Package operations mutate the system; require root before anything else.
+_package_require_root() {
+    if ! system_is_root; then
+        error 'Package management requires root.'
+        return 1
+    fi
+    return 0
+}
+
 # --- package_update_index ----------------------------------------------------
 # Refreshes the package index. Explicitly invoked only.
 package_update_index() {
+    _package_require_root || return 1
+
     local pm
     pm=$(system_package_manager) || return 1
     case "$pm" in
@@ -180,6 +231,12 @@ package_update_index() {
 # --- package_install ---------------------------------------------------------
 # Installs packages. Explicitly invoked only — never run automatically.
 package_install() {
+    _package_require_root || return 1
+    if (( $# == 0 )); then
+        error 'No packages specified.'
+        return 1
+    fi
+
     local pm
     pm=$(system_package_manager) || return 1
     case "$pm" in
@@ -195,6 +252,12 @@ package_install() {
 # --- package_remove ----------------------------------------------------------
 # Removes packages. Explicitly invoked only.
 package_remove() {
+    _package_require_root || return 1
+    if (( $# == 0 )); then
+        error 'No packages specified.'
+        return 1
+    fi
+
     local pm
     pm=$(system_package_manager) || return 1
     case "$pm" in

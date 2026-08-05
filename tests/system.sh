@@ -269,6 +269,185 @@ else
 fi
 
 # ============================================================================
+# 8. os-release quote handling (pure helper)
+# ============================================================================
+echo ''
+echo '--- 8. os-release quote handling ---'
+
+assert_eq "$(_system_os_release_unquote '"debian"')" 'debian' 'double-quoted value unquoted'
+assert_eq "$(_system_os_release_unquote "'debian'")" 'debian' 'single-quoted value unquoted'
+assert_eq "$(_system_os_release_unquote '"ubuntu debian"')" 'ubuntu debian' 'double-quoted multi-word kept'
+assert_eq "$(_system_os_release_unquote 'barevalue')" 'barevalue' 'unquoted value untouched'
+
+# ============================================================================
+# 9. ID_LIKE parsing order (pure helper)
+# ============================================================================
+echo ''
+echo '--- 9. ID_LIKE parsing order ---'
+
+assert_eq "$(_system_distro_from_like 'ubuntu debian')" 'ubuntu' 'ID_LIKE order: ubuntu first'
+assert_eq "$(_system_distro_from_like 'debian ubuntu')" 'debian' 'ID_LIKE order: debian first'
+assert_eq "$(_system_distro_from_like 'fedora rhel')" 'fedora' 'ID_LIKE order: fedora first'
+assert_eq "$(_system_distro_from_like 'debian')" 'debian' 'ID_LIKE single token'
+
+set +e
+_system_distro_from_like 'unknown stuff' > /dev/null 2>&1
+like_rc=$?
+set -e
+if (( like_rc != 0 )); then
+    pass 'ID_LIKE unsupported tokens rejected'
+else
+    fail 'ID_LIKE unsupported tokens should be rejected'
+fi
+
+# ============================================================================
+# 10. Package manager mapping (pure matrix)
+# ============================================================================
+echo ''
+echo '--- 10. Package manager mapping ---'
+
+pm_case() {
+    local distro="$1" expected="$2" label="$3"
+    local got rc
+    set +e
+    got=$(_system_package_manager_for_distro "$distro" 2>/dev/null)
+    rc=$?
+    set -e
+    if (( rc == 0 )) && [[ "$got" == "$expected" ]]; then
+        pass "$label"
+    else
+        fail "$label (got '$got', rc=$rc)"
+    fi
+}
+
+pm_case debian   'apt'     'debian → apt'
+pm_case ubuntu   'apt'     'ubuntu → apt'
+pm_case alpine   'apk'     'alpine → apk'
+pm_case fedora   'dnf'     'fedora → dnf'
+pm_case arch     'pacman'  'arch → pacman'
+
+# RHEL-family → dnf or yum (host-dependent availability)
+for d in centos rocky almalinux; do
+    set +e
+    got=$(_system_package_manager_for_distro "$d" 2>/dev/null)
+    rc=$?
+    set -e
+    if (( rc == 0 )) && { [[ "$got" == 'dnf' ]] || [[ "$got" == 'yum' ]]; }; then
+        pass "$d → ${got}"
+    else
+        fail "$d mapping (got '$got', rc=$rc)"
+    fi
+done
+
+# Unknown distro must be rejected
+set +e
+got=$(_system_package_manager_for_distro 'slackware' 2>/dev/null)
+rc=$?
+set -e
+if (( rc != 0 )) && [[ "$got" == 'unknown' ]]; then
+    pass 'unknown distro → rejected'
+else
+    fail "unknown distro should be rejected (got '$got', rc=$rc)"
+fi
+
+# ============================================================================
+# 11. Package API guards (root + argument validation)
+# ============================================================================
+echo ''
+echo '--- 11. Package API guards ---'
+
+# Mock the package manager binary so nothing real is executed.
+PKG_MOCK_DIR=$(mktemp -d)
+export PKG_TEST_LOG="${PKG_MOCK_DIR}/pkg-calls.log"
+cat > "${PKG_MOCK_DIR}/apt-get" <<'PKGEOF'
+#!/usr/bin/env bash
+echo "apt-get $*" >> "${PKG_TEST_LOG}"
+exit 0
+PKGEOF
+chmod +x "${PKG_MOCK_DIR}/apt-get"
+export PATH="${PKG_MOCK_DIR}:${PATH}"
+
+# Root/arg mocks — decouple from the real EUID.
+mock_root()     { system_is_root() { return 0; }; }
+mock_non_root() { system_is_root() { return 1; }; }
+
+# No packages specified → rejected even as root.
+mock_root
+: > "${PKG_TEST_LOG}"
+set +e
+package_install > /dev/null 2>&1
+noarg_rc=$?
+set -e
+if (( noarg_rc != 0 )); then
+    pass 'package_install with no packages rejected'
+else
+    fail 'package_install with no packages should be rejected'
+fi
+
+: > "${PKG_TEST_LOG}"
+set +e
+package_remove > /dev/null 2>&1
+noarg_rc=$?
+set -e
+if (( noarg_rc != 0 )); then
+    pass 'package_remove with no packages rejected'
+else
+    fail 'package_remove with no packages should be rejected'
+fi
+
+# As root, package_install dispatches to the (mocked) package manager.
+: > "${PKG_TEST_LOG}"
+set +e
+package_install test-package > /dev/null 2>&1
+pkg_rc=$?
+set -e
+if (( pkg_rc == 0 )); then
+    pass 'package_install as root succeeds'
+else
+    fail 'package_install as root should succeed'
+fi
+assert_eq "$(cat "${PKG_TEST_LOG}")" 'apt-get install -y test-package' 'package_install calls apt-get install -y'
+
+# Without root, every package API is refused and nothing is invoked.
+mock_non_root
+
+: > "${PKG_TEST_LOG}"
+set +e
+package_install test-package > /dev/null 2>&1
+pkg_rc=$?
+set -e
+if (( pkg_rc != 0 )); then
+    pass 'package_install fails without root'
+else
+    fail 'package_install should fail without root'
+fi
+assert_eq "$(cat "${PKG_TEST_LOG}")" '' 'package_install does not invoke apt-get without root'
+
+: > "${PKG_TEST_LOG}"
+set +e
+package_remove foo > /dev/null 2>&1
+pkg_rc=$?
+set -e
+if (( pkg_rc != 0 )); then
+    pass 'package_remove fails without root'
+else
+    fail 'package_remove should fail without root'
+fi
+
+: > "${PKG_TEST_LOG}"
+set +e
+package_update_index > /dev/null 2>&1
+pkg_rc=$?
+set -e
+if (( pkg_rc != 0 )); then
+    pass 'package_update_index fails without root'
+else
+    fail 'package_update_index should fail without root'
+fi
+
+rm -rf "${PKG_MOCK_DIR}"
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ''
