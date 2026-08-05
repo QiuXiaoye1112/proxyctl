@@ -133,6 +133,13 @@ transaction_begin() {
     local tx_id
     tx_id="tx_$(date +%s)_${RANDOM}_${label}"
 
+    # Enforce the transaction root permission invariant here, so the module
+    # does not depend on the installer having created it.
+    local root
+    root=$(transaction_root)
+    mkdir -p "$root"
+    chmod 700 "$root"
+
     local tx_dir
     tx_dir=$(transaction_dir "$tx_id")
     mkdir -p "$tx_dir"

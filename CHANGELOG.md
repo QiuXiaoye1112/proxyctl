@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.2] — Unreleased
+
+### Fixed
+- installer transaction-level rollback: lib + binary + symlink are preserved
+  until the final commit and restored together on any failure
+- first-install failure cleanup: no partial binary/lib/symlink is left behind
+- upgrade rollback restoration: old binary, lib, symlink, and metadata are
+  restored byte-for-byte after a failed upgrade
+- symlink rollback: pre-install symlink target is recorded and restored
+- installer smoke-test path typo (trailing `}` in `PROXYCTL_LIB`)
+- rollback failure-injection coverage via `PROXYCTL_TEST_FAIL_AT`
+- transaction root permission invariant: `transaction_begin` enforces mode 700
+  independently of the installer
+
+### Changed
+- installer supports test-only `PROXYCTL_INSTALL_ROOT` override (production
+  behaviour unchanged)
+- installer rollback handled by a single EXIT trap (`_cleanup_on_exit`)
+- production metadata allowlist no longer includes test-only keys
+  (`test_key`, `test_obj` removed)
+- version: 0.1.1 → 0.1.2
+
 ## [0.1.1] — Unreleased
 
 ### Security

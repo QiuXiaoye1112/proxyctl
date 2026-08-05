@@ -1,4 +1,4 @@
-# ProxyCTL 0.1.1
+# ProxyCTL 0.1.2
 
 Unified proxy manager for Xray and sing-box.
 
@@ -24,8 +24,11 @@ Unified proxy manager for Xray and sing-box.
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
 - **CLI** — `proxyctl help`, `proxyctl version`, `proxyctl status`, `proxyctl menu`
-- **Safe installer** — staged lib/binary installation with automatic rollback on failure
-- **Smoke test suite** — comprehensive security and functional assertions
+- **Safe installer** — single-transaction install: staged lib/binary swap, atomic
+  symlink, metadata init, and a unified rollback that restores the previous
+  installation on any failure. Old artifacts are kept until the final commit.
+- **Smoke test suite** — comprehensive security, functional, and installer
+  rollback assertions (156+ checks)
 
 ## Planned (future phases)
 
@@ -91,8 +94,10 @@ proxyctl/
 - Metadata writes use atomic temp-file-in-same-directory + mv
 - Corrupt or invalid JSON writes are detected and rejected before overwriting metadata
 - All unimplemented mutating operations fail closed (non-zero exit)
-- Installer uses staged updates with automatic rollback on failure
-- Data directories are created with mode 700
+- Installer runs as a single transaction: old lib/binary/symlink are preserved
+  until the final commit, and any failure restores the previous installation
+  (including first-install cleanup)
+- Data directories are created with mode 700 (including the transaction root)
 
 ## Development
 

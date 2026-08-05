@@ -11,9 +11,6 @@ readonly _META_ALLOWED_KEYS=(
     inbounds
     certificates
     firewall
-    # Test keys allowed for smoke tests
-    test_key
-    test_obj
 )
 
 # --- _metadata_require_jq ---------------------------------------------------
