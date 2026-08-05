@@ -43,6 +43,19 @@ export SERVICE_TEST_RCUP_OUT=''
 cat > "${MOCK_DIR}/systemctl" <<'MOCKEOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >> "${SERVICE_TEST_LOG}"
+
+# service_exists uses `systemctl show --property=LoadState --value NAME.service`.
+# Return loaded for known test services and not-found for everything else.
+if [[ "${1:-}" == 'show' && "${2:-}" == '--property=LoadState' && "${3:-}" == '--value' ]]; then
+    case "${4:-}" in
+        xray.service|sing-box.service|foo.service)
+            printf '%s\n' 'loaded'
+            ;;
+        *)
+            printf '%s\n' 'not-found'
+            ;;
+    esac
+fi
 exit 0
 MOCKEOF
 
@@ -176,9 +189,31 @@ reset_log
 service_is_enabled xray
 assert_eq "$(last_call)" 'systemctl is-enabled --quiet xray' 'systemd: is_enabled → systemctl is-enabled --quiet xray'
 
+# Existing service: mock returns LoadState=loaded.
 reset_log
+set +e
 service_exists xray
-assert_eq "$(last_call)" 'systemctl list-unit-files --type=service xray.service' 'systemd: exists → systemctl list-unit-files xray.service'
+exists_rc=$?
+set -e
+if (( exists_rc == 0 )); then
+    pass 'systemd: service_exists true for loaded service'
+else
+    fail 'systemd: service_exists should be true for loaded service'
+fi
+assert_eq "$(last_call)" 'systemctl show --property=LoadState --value xray.service' 'systemd: exists queries LoadState'
+
+# Missing service: systemctl still exits 0, but LoadState=not-found must return false.
+reset_log
+set +e
+service_exists definitely-missing
+missing_rc=$?
+set -e
+if (( missing_rc != 0 )); then
+    pass 'systemd: service_exists false for LoadState=not-found'
+else
+    fail 'systemd: service_exists should reject LoadState=not-found'
+fi
+assert_eq "$(last_call)" 'systemctl show --property=LoadState --value definitely-missing.service' 'systemd: missing exists query uses LoadState'
 
 reset_log
 service_logs xray 25
