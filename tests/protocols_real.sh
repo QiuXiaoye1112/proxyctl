@@ -72,7 +72,8 @@ validate_singbox() {
 }
 
 validate_xray_outbound() {
-    local name="$1" spec="$2" outbound config="$ROOT/xray-out-${name}.json" output
+    local name="$1" spec="$2" outbound output config
+    config="$ROOT/xray-out-${name}.json"
     if ! outbound=$(engine_xray_outbound_build_from_spec "$spec" 2>"$ROOT/error"); then
         fail "Xray outbound builder: ${name} — $(cat "$ROOT/error")"
         return 0
@@ -86,7 +87,8 @@ validate_xray_outbound() {
 }
 
 validate_singbox_outbound() {
-    local name="$1" spec="$2" outbound config="$ROOT/singbox-out-${name}.json" output
+    local name="$1" spec="$2" outbound output config
+    config="$ROOT/singbox-out-${name}.json"
     if ! outbound=$(engine_singbox_outbound_build_from_spec "$spec" 2>"$ROOT/error"); then
         fail "sing-box outbound builder: ${name} — $(cat "$ROOT/error")"
         return 0
