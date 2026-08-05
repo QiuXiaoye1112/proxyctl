@@ -79,6 +79,9 @@ jobs:
       - name: Restore runtime synchronization
         run: bash tests/runtime.sh
 
+      - name: Self-uninstall safety
+        run: bash tests/uninstall.sh
+
   real-protocols:
     runs-on: ubuntu-latest
     timeout-minutes: 20
