@@ -15,9 +15,10 @@ readonly PROXYCTL_DATA="${PROXYCTL_DATA:-/var/lib/proxyctl}"
 readonly PROXYCTL_META="${PROXYCTL_DATA}/meta.json"
 readonly PROXYCTL_CERTS="${PROXYCTL_CERTS:-/etc/proxyctl/certs}"
 readonly PROXYCTL_BACKUP="${PROXYCTL_BACKUP:-/var/backups/proxyctl}"
-readonly PROXYCTL_LOCK="${PROXYCTL_LOCK:-/run/lock/proxyctl.lock}"
-readonly PROXYCTL_CERT_LOCK="${PROXYCTL_CERT_LOCK:-/run/lock/proxyctl-cert.lock}"
-readonly PROXYCTL_FIREWALL_LOCK="${PROXYCTL_FIREWALL_LOCK:-/run/lock/proxyctl-firewall.lock}"
+readonly PROXYCTL_LOCK_DIR="${PROXYCTL_LOCK_DIR:-/run/proxyctl}"
+readonly PROXYCTL_LOCK="${PROXYCTL_LOCK:-${PROXYCTL_LOCK_DIR}/config.lock}"
+readonly PROXYCTL_CERT_LOCK="${PROXYCTL_CERT_LOCK:-${PROXYCTL_LOCK_DIR}/cert.lock}"
+readonly PROXYCTL_FIREWALL_LOCK="${PROXYCTL_FIREWALL_LOCK:-${PROXYCTL_LOCK_DIR}/firewall.lock}"
 
 readonly XRAY_CONFIG='/usr/local/etc/xray/config.json'
 readonly SINGBOX_CONFIG='/etc/sing-box/config.json'
@@ -68,7 +69,7 @@ source "${LIB_DIR}/common/service.sh"
 source "${LIB_DIR}/common/network.sh"
 # shellcheck source=lib/common/port.sh
 source "${LIB_DIR}/common/port.sh"
-# shellcheck source=lib/common/lock.sh"
+# shellcheck source=lib/common/lock.sh
 source "${LIB_DIR}/common/lock.sh"
 # shellcheck source=lib/common/certificate.sh
 source "${LIB_DIR}/common/certificate.sh"
