@@ -66,6 +66,9 @@ source "${LIB_DIR}/xray/inbound.sh"
 source "${LIB_DIR}/singbox/inbound.sh"
 source "${LIB_DIR}/singbox/clients.sh"
 source "${LIB_DIR}/client_rename.sh"
+source "${LIB_DIR}/outbound.sh"
+source "${LIB_DIR}/xray/outbound.sh"
+source "${LIB_DIR}/singbox/outbound.sh"
 source "${LIB_DIR}/singbox/hy2_hop.sh"
 source "${LIB_DIR}/runtime.sh"
 source "${LIB_DIR}/menu.sh"
@@ -153,6 +156,35 @@ cmd_inbound() {
     esac
 }
 
+cmd_outbound() {
+    local action="${1:-list}" engine="${2:-}" answer
+    case "$action" in
+        list)
+            if [[ -n "$engine" ]]; then outbound_list "$engine"; else
+                for engine in xray singbox; do
+                    echo ''; heading "${engine} outbounds"
+                    if engine_call "$engine" installed >/dev/null 2>&1; then outbound_list "$engine"; else info 'Core not installed.'; fi
+                done
+            fi
+            ;;
+        add)
+            [[ -n "$engine" ]] || { error 'Usage: proxyctl outbound add <xray|singbox> [--json SPEC]'; return 1; }
+            if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; outbound_add_from_spec "$engine" "$4"; else outbound_add_interactive "$engine"; fi
+            ;;
+        show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl outbound show <engine> <tag>'; return 1; }; outbound_show "$engine" "$3" ;;
+        assign)
+            [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl outbound assign <engine> <inbound> <outbound|direct>'; return 1; }
+            outbound_assign "$engine" "$3" "$4"
+            ;;
+        delete)
+            [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl outbound delete <engine> <tag> [--yes]'; return 1; }
+            if [[ "${4:-}" != --yes ]]; then confirm answer "Delete outbound ${engine}/${3}? Managed bindings will revert to direct." n || return 1; [[ "$answer" == y ]] || return 0; fi
+            outbound_delete "$engine" "$3"
+            ;;
+        *) error "Unknown outbound action: ${action}"; return 1 ;;
+    esac
+}
+
 cmd_client() {
     local action="${1:-list}" engine="${2:-}" tag="${3:-}" answer
     [[ -n "$engine" && -n "$tag" ]] || { error 'Usage: proxyctl client <list|add|rename|rotate|delete> <engine> <tag> ...'; return 1; }
@@ -202,6 +234,13 @@ Usage:
   proxyctl inbound rename <engine> <old> <new>
   proxyctl inbound delete <engine> <tag> [--yes]
 
+  proxyctl outbound list [engine]
+  proxyctl outbound add <engine>
+  proxyctl outbound add <engine> --json '<spec>'
+  proxyctl outbound show <engine> <tag>
+  proxyctl outbound assign <engine> <inbound> <outbound|direct>
+  proxyctl outbound delete <engine> <tag> [--yes]
+
   proxyctl client list <engine> <tag>
   proxyctl client add <engine> <tag> [name] [credential]
   proxyctl client rename <engine> <tag> <old> <new>
@@ -216,6 +255,7 @@ Usage:
 Engines: xray, singbox
 Xray: VLESS, VMess, Trojan, SOCKS5, HTTP
 sing-box: AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP
+Outbound types: SOCKS5, HTTP, LOCAL source IP
 EOF
 }
 
@@ -229,6 +269,7 @@ _main() {
         menu) menu_main ;;
         core) shift || true; cmd_core "$@" ;;
         inbound) shift || true; cmd_inbound "$@" ;;
+        outbound) shift || true; cmd_outbound "$@" ;;
         client|user) shift || true; cmd_client "$@" ;;
         link|share) shift || true; [[ -n "${1:-}" && -n "${2:-}" ]] || { error 'Usage: proxyctl link <engine> <tag> [user]'; return 1; }; inbound_share "$1" "$2" "${3:-}" ;;
         config) shift || true; cmd_config "$@" ;;
@@ -247,7 +288,7 @@ _main() {
 }
 
 cmd_status() {
-    local count config
+    local count out_count config
     heading 'ProxyCTL Status'
     echo "Version: ${PROXYCTL_VERSION}"
     for engine in xray singbox; do
@@ -258,8 +299,14 @@ cmd_status() {
             echo "  Version:   $(engine_call "$engine" version 2>/dev/null || echo unknown)"
             if engine_call "$engine" is_active; then echo '  Status:    active'; else echo '  Status:    inactive'; fi
             config=$(inbound_config_file "$engine" 2>/dev/null || true)
-            if [[ -n "$config" && -f "$config" ]]; then count=$(jq '.inbounds|length' "$config" 2>/dev/null || echo '?'); else count='?'; fi
+            if [[ -n "$config" && -f "$config" ]]; then
+                count=$(jq '.inbounds|length' "$config" 2>/dev/null || echo '?')
+                out_count=$(jq '[.outbounds[]?|select(.tag!="direct" and .tag!="blocked" and .tag!="block")]|length' "$config" 2>/dev/null || echo '?')
+            else
+                count='?'; out_count='?'
+            fi
             echo "  Inbounds:  ${count}"
+            echo "  Outbounds: ${out_count}"
         else
             echo '  Installed: no'
         fi
