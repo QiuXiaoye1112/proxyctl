@@ -276,3 +276,119 @@ network_resolve_domain() {
     return 0
 }
 
+# --- _network_public_ip ------------------------------------------------------
+# Queries public-IP providers with a curl timeout and re-validates every
+# response before trusting it. Fails closed (no garbage on stdout).
+_network_public_ip() {
+    local family="$1"
+    local -a providers
+    if [[ "$family" == '4' ]]; then
+        providers=(
+            'https://cloudflare.com/cdn-cgi/trace|trace'
+            'https://api.ipify.org|raw'
+            'https://ipv4.icanhazip.com|raw'
+        )
+    else
+        providers=(
+            'https://cloudflare.com/cdn-cgi/trace|trace'
+            'https://api64.ipify.org|raw'
+            'https://ipv6.icanhazip.com|raw'
+        )
+    fi
+
+    local entry url kind out ip
+    for entry in "${providers[@]}"; do
+        url="${entry%%|*}"
+        kind="${entry##*|}"
+
+        if ! out=$(curl "-${family}" --connect-timeout 3 --max-time 5 --fail \
+            --silent --show-error "$url" 2>/dev/null); then
+            continue
+        fi
+
+        if [[ "$kind" == 'trace' ]]; then
+            ip=$(printf '%s\n' "$out" | awk -F= '/^ip=/{print $2; exit}')
+        else
+            ip=$(printf '%s' "$out" | tr -d '[:space:]')
+        fi
+        [[ -n "$ip" ]] || continue
+
+        if [[ "$family" == '4' ]] && network_validate_ipv4 "$ip"; then
+            printf '%s\n' "$ip"
+            return 0
+        fi
+        if [[ "$family" == '6' ]] && network_validate_ipv6 "$ip"; then
+            printf '%s\n' "$ip"
+            return 0
+        fi
+    done
+
+    error "Unable to determine public IPv${family} address."
+    return 1
+}
+
+# --- network_public_ipv4 -----------------------------------------------------
+network_public_ipv4() {
+    _network_public_ip '4'
+}
+
+# --- network_public_ipv6 -----------------------------------------------------
+network_public_ipv6() {
+    _network_public_ip '6'
+}
+
+# --- _network_validate_tcp_port ----------------------------------------------
+# Numeric port check kept local to network.sh (avoids a network→port cycle).
+_network_validate_tcp_port() {
+    local port="$1"
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    (( port >= 1 && port <= 65535 )) || return 1
+    return 0
+}
+
+# --- _network_validate_tcp_timeout -------------------------------------------
+_network_validate_tcp_timeout() {
+    local timeout="$1"
+    [[ "$timeout" =~ ^[0-9]+$ ]] || return 1
+    (( timeout >= 1 && timeout <= 30 )) || return 1
+    return 0
+}
+
+# --- network_tcp_connect -----------------------------------------------------
+# Usage: network_tcp_connect <host> <port> [timeout]
+# Uses nc when available, otherwise timeout + bash /dev/tcp.
+network_tcp_connect() {
+    local host="$1"
+    local port="$2"
+    local timeout="${3-3}"
+
+    network_validate_host "$host" || {
+        error "Invalid host: ${host}"
+        return 1
+    }
+    _network_validate_tcp_port "$port" || {
+        error "Invalid TCP port: ${port}"
+        return 1
+    }
+    _network_validate_tcp_timeout "$timeout" || {
+        error "Invalid timeout: ${timeout} (must be 1-30)"
+        return 1
+    }
+
+    if command -v nc > /dev/null 2>&1; then
+        if nc -z -w "$timeout" "$host" "$port" 2>/dev/null; then
+            return 0
+        fi
+        return 1
+    fi
+
+    if command -v timeout > /dev/null 2>&1; then
+        if timeout "$timeout" bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then
+            return 0
+        fi
+        return 1
+    fi
+
+    error 'No supported TCP connect tool found (nc or timeout + /dev/tcp).'
+    return 1
+}
