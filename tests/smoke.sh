@@ -50,9 +50,14 @@ load_all(){
     source "$PROJECT_DIR/lib/xray/engine.sh"
     source "$PROJECT_DIR/lib/singbox/engine.sh"
     source "$PROJECT_DIR/lib/inbound.sh"
+    source "$PROJECT_DIR/lib/inbound_edit.sh"
     source "$PROJECT_DIR/lib/xray/inbound.sh"
     source "$PROJECT_DIR/lib/singbox/inbound.sh"
     source "$PROJECT_DIR/lib/singbox/clients.sh"
+    source "$PROJECT_DIR/lib/client_rename.sh"
+    source "$PROJECT_DIR/lib/outbound.sh"
+    source "$PROJECT_DIR/lib/xray/outbound.sh"
+    source "$PROJECT_DIR/lib/singbox/outbound.sh"
     source "$PROJECT_DIR/lib/singbox/hy2_hop.sh"
     source "$PROJECT_DIR/lib/runtime.sh"
     source "$PROJECT_DIR/lib/menu.sh"
@@ -71,6 +76,8 @@ out=$(bash "$PROJECT_DIR/proxyctl.sh" version 2>&1)
 eqv "$out" 'proxyctl 0.3.0' 'source-layout version is 0.3.0'
 out=$(bash "$PROJECT_DIR/proxyctl.sh" help 2>&1)
 contains "$out" 'proxyctl inbound add' 'help exposes inbound management'
+contains "$out" 'proxyctl outbound add' 'help exposes outbound management'
+contains "$out" 'proxyctl outbound assign' 'help exposes inbound-to-outbound assignment'
 contains "$out" 'proxyctl client add' 'help exposes user management'
 contains "$out" 'proxyctl core install' 'help exposes core lifecycle'
 contains "$out" 'proxyctl backup' 'help exposes backup management'
@@ -81,7 +88,7 @@ mkdir -p "$INST/usr/local/sbin" "$INST/usr/local/lib/proxyctl"
 cp "$PROJECT_DIR/proxyctl.sh" "$INST/usr/local/sbin/proxyctl"
 cp -r "$PROJECT_DIR/lib/"* "$INST/usr/local/lib/proxyctl/"
 out=$(PROXYCTL_LIB="$INST/usr/local/lib/proxyctl" bash "$INST/usr/local/sbin/proxyctl" version 2>&1)
-eqv "$out" 'proxyctl 0.3.0' 'installed-layout entrypoint loads every Phase 3 module'
+eqv "$out" 'proxyctl 0.3.0' 'installed-layout entrypoint loads every current module'
 
 # 4. Engine registration contract.
 ok 'engine_validate_registration xray' 'Xray engine implements standard API'
@@ -138,12 +145,16 @@ bad '_backup_validate_label ../bad' 'backup label rejects traversal'
 ok '_backup_validate_id proxyctl-20260805-120000-123-nightly.tar.gz' 'backup id accepts generated format'
 bad '_backup_validate_id ../../bad.tar.gz' 'backup id rejects traversal'
 
-# 12. Phase 3 inbound helper contract.
+# 12. Inbound/outbound helper contract.
 ok 'inbound_validate_tag node-1' 'inbound tag accepts safe value'
 bad 'inbound_validate_tag ../node' 'inbound tag rejects traversal'
 eqv "$(_xray_spec_protocol SOCKS5)" socks 'Xray SOCKS5 maps to core socks protocol'
 ok '_singbox_validate_hop_range 20000-50000' 'HY2 hop range accepts valid range'
 bad '_singbox_validate_hop_range 50000-20000' 'HY2 hop range rejects reversed range'
+ok 'outbound_validate_tag proxy-1' 'outbound tag accepts safe value'
+bad 'outbound_validate_tag direct' 'reserved outbound tag is rejected'
+eqv "$(_xray_outbound_protocol SOCKS5)" socks 'Xray outbound SOCKS5 maps to socks'
+eqv "$(_singbox_outbound_type HTTP)" http 'sing-box outbound HTTP maps to http'
 
 # 13. Random credential primitives.
 hex=$(inbound_random_hex 8)
@@ -154,6 +165,7 @@ uuid=$(inbound_generate_uuid)
 # 14. Fail-closed entrypoints without cores/files.
 bad "bash '$PROJECT_DIR/proxyctl.sh' config check xray" 'Xray config check fails closed when core/config unavailable'
 bad "bash '$PROJECT_DIR/proxyctl.sh' inbound show xray missing" 'missing inbound show fails closed'
+bad "bash '$PROJECT_DIR/proxyctl.sh' outbound show xray missing" 'missing outbound show fails closed'
 bad "bash '$PROJECT_DIR/proxyctl.sh' client list singbox missing" 'missing user list fails closed'
 bad "bash '$PROJECT_DIR/proxyctl.sh' something-invalid" 'unknown CLI command returns non-zero'
 
