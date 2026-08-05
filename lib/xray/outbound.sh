@@ -96,3 +96,42 @@ engine_xray_outbound_list() {
       else [.tag,.protocol,"\(.settings.address):\(.settings.port)",(if (.settings.user // "")=="" then "none" else .settings.user end)] end | @tsv' "$config" |
       while IFS=$'\t' read -r tag type address auth; do printf '%-24s %-9s %-28s %s\n' "$tag" "$type" "$address" "$auth"; done
 }
+
+_xray_outbound_sync_inbound_reference() {
+    local action="$1" tag="$2" old="${3:-}" config candidate changed=0
+    config=$(engine_xray_config_file)
+    [[ -f "$config" && ! -L "$config" ]] || return 0
+    candidate=$(mktemp) || return 1
+    case "$action" in
+        rename)
+            if jq -e --arg old "$old" '.routing.rules[]?|select((.ruleTag // "")==("proxyctl-outbound:"+$old))' "$config" >/dev/null 2>&1; then
+                jq --arg old "$old" --arg new "$tag" '
+                  .routing.rules=((.routing.rules // []) | map(
+                    if (.ruleTag // "")==("proxyctl-outbound:"+$old) then
+                      .ruleTag=("proxyctl-outbound:"+$new) |
+                      if (.inboundTag|type)=="array" then .inboundTag|=map(if .==$old then $new else . end)
+                      elif .inboundTag==$old then .inboundTag=$new else . end
+                    else . end))' "$config" >"$candidate" || { rm -f -- "$candidate"; return 1; }
+                changed=1
+            fi
+            ;;
+        delete)
+            if jq -e --arg tag "$tag" '.routing.rules[]?|select((.ruleTag // "")==("proxyctl-outbound:"+$tag))' "$config" >/dev/null 2>&1; then
+                jq --arg tag "$tag" '.routing.rules=((.routing.rules // []) | map(select((.ruleTag // "")!=("proxyctl-outbound:"+$tag))))' "$config" >"$candidate" || { rm -f -- "$candidate"; return 1; }
+                changed=1
+            fi
+            ;;
+    esac
+    if (( changed )); then
+        if ! apply_candidate xray "$candidate"; then rm -f -- "$candidate"; return 1; fi
+    fi
+    rm -f -- "$candidate"
+}
+
+engine_xray_inbound_post_change() {
+    local action="$1" tag="${2:-}" old="${3:-}"
+    case "$action" in
+        rename|delete) _xray_outbound_sync_inbound_reference "$action" "$tag" "$old" ;;
+        *) return 0 ;;
+    esac
+}
