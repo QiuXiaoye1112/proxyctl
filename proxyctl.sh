@@ -6,7 +6,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-readonly PROXYCTL_VERSION='0.2.6'
+readonly PROXYCTL_VERSION='0.2.7'
 
 readonly PROXYCTL_BIN="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}"
 readonly PROXYCTL_LIB="${PROXYCTL_LIB:-/usr/local/lib/proxyctl}"
