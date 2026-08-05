@@ -102,3 +102,32 @@ engine_singbox_outbound_list() {
       else [.tag,.type,"\(.server):\(.server_port)",(if (.username // "")=="" then "none" else .username end)] end | @tsv' "$config" |
       while IFS=$'\t' read -r tag type address auth; do printf '%-24s %-9s %-28s %s\n' "$tag" "$type" "$address" "$auth"; done
 }
+
+singbox_outbound_inbound_post_change() {
+    local action="$1" tag="${2:-}" old="${3:-}" config candidate changed=0
+    config=$(engine_singbox_config_file)
+    [[ -f "$config" && ! -L "$config" ]] || return 0
+    candidate=$(mktemp) || return 1
+    case "$action" in
+        rename)
+            if jq -e --arg old "$old" '.route.rules[]?|select(.action=="route" and (.inbound // [])==[$old] and ((keys_unsorted|sort)==(["action","inbound","outbound"]|sort)))' "$config" >/dev/null 2>&1; then
+                jq --arg old "$old" --arg new "$tag" '
+                  .route.rules=((.route.rules // []) | map(
+                    if .action=="route" and (.inbound // [])==[$old] and
+                       ((keys_unsorted|sort)==(["action","inbound","outbound"]|sort))
+                    then .inbound=[$new] else . end))' "$config" >"$candidate" || { rm -f -- "$candidate"; return 1; }
+                changed=1
+            fi
+            ;;
+        delete)
+            if jq -e --arg tag "$tag" '.route.rules[]?|select(.action=="route" and (.inbound // [])==[$tag] and ((keys_unsorted|sort)==(["action","inbound","outbound"]|sort)))' "$config" >/dev/null 2>&1; then
+                jq --arg tag "$tag" '.route.rules=((.route.rules // []) | map(select((.action=="route" and (.inbound // [])==[$tag] and ((keys_unsorted|sort)==(["action","inbound","outbound"]|sort)))|not)))' "$config" >"$candidate" || { rm -f -- "$candidate"; return 1; }
+                changed=1
+            fi
+            ;;
+    esac
+    if (( changed )); then
+        if ! apply_candidate singbox "$candidate"; then rm -f -- "$candidate"; return 1; fi
+    fi
+    rm -f -- "$candidate"
+}
