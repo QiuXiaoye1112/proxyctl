@@ -21,6 +21,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bash jq openssl util-linux iproute2 net-tools curl python3 tar unzip
 
+      - name: Bash declaration scope audit
+        run: python3 tests/bash_scope_audit.py
+
       - name: Bash syntax
         run: |
           find . -name '*.sh' -print0 | xargs -0 -n1 bash -n
