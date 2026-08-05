@@ -1,8 +1,8 @@
-# ProxyCTL 0.2.5
+# ProxyCTL 0.2.7
 
 Unified proxy manager for Xray and sing-box.
 
-> **Phase 2 — Common Infrastructure**
+> **Phase 2 — Common Infrastructure: complete**
 
 ## Requirements
 
@@ -13,6 +13,7 @@ Unified proxy manager for Xray and sing-box.
 - iproute2 (`ip`, `ss`)
 - curl
 - OpenSSL
+- tar
 
 DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
 `dig` is never required. Certbot is managed lazily in an isolated Python virtual
@@ -23,59 +24,36 @@ environment when ACME functionality is first used.
 - **Project skeleton** with strict module boundaries
 - **Engine Registry** — unified `engine_call xray|singbox <method>` dispatcher
 - **Engine API** — both engines expose all 14 standard methods
-- **Capability system** — V1 protocol and transport definitions (no hard-coded menus)
-- **Menu skeleton** — interactive terminal UI with inbound creation wizard
+- **Capability system** — fixed V1 protocol/transport scope
 - **Metadata** — JSON-backed persistent state at `/var/lib/proxyctl/meta.json`
-- **Transaction staging framework** — staging with commit/rollback and path-safety guards
-- **System abstraction** — OS, distro, architecture, init system, package manager,
-  hostname detection with canonical arch tokens (`amd64`, `arm64`, `armv7`, `386`)
-- **Service abstraction** — unified `service_*` API over systemd and OpenRC
-  (`start`/`stop`/`restart`/`enable`/`disable`/`is_active`/`is_enabled`/`logs`)
-- **Network utilities** — IPv4/IPv6/domain/host validation, default-interface and
-  primary-IP detection from `ip route get`, public-IP detection with a timed
-  3-provider fallback, DNS resolution (getent → nslookup), timed TCP connect
-- **Port utilities** — TCP/UDP listening inspection via `ss` (netstat fallback),
-  exact port matching, process lookup, free-port checks that fail closed on
-  inspection errors, and randomized free-port allocation
-- **Process locking** — `flock`-backed `config`/`cert`/`firewall` locks on fixed
-  fds with non-blocking `lock_acquire`, idempotent `lock_release`,
-  `lock_is_held`, and `with_lock`. Runtime lock files live under the dedicated
-  `/run/proxyctl/` directory rather than directly in the shared `/run/lock`;
-  symlink, special-file, foreign-owner, and insecure-parent lock paths are
-  rejected before opening. Locks are released automatically by the kernel on
-  process exit and lock files are never deleted.
-- **Config apply transactions** — `apply_candidate <engine> <candidate>` applies
-  a new Xray / sing-box config safely under the config lock: real core
-  validation (`xray run -test -config` / `sing-box check -c`), same-directory
-  temp + atomic rename, old-permission preservation, and automatic rollback
-  (config restored, service restarted, or removed when there was no previous
-  config) on any failure. Inactive services are validated and replaced but not
-  started. Failed rollbacks preserve the transaction and recovery copy.
-- **Shared certificate manager** — ported from the mature xrayctl certificate
-  lifecycle and generalized for both engines. Features include isolated Certbot
-  state, domain and IP certificates, Cloudflare DNS validation, standalone HTTP
-  validation, nginx integration, manual DNS, self-signed certificates, imports,
-  metadata-managed `identifier` vs Certbot `certName`, renewal status tracking,
-  safe deletion, and a systemd renewal timer.
-- **Atomic certificate pair sync** — managed pairs are staged, validated with
-  OpenSSL, backed up, and replaced as a unit. A failed replacement restores the
-  previous pair. Certificate changes restart only active engines whose config
-  actually references that managed certificate path.
-- **Shared certificate access** — managed certificate copies live under
-  `/etc/proxyctl/certs/<identifier>/` and use the `proxyctl-cert` supplementary
-  group so Xray and sing-box can consume the same non-world-readable private key.
-- **UI library** — `heading`, `info`, `warn`, `error`, `die`, `critical`,
-  `pause`, `confirm`, `choose`, `prompt_value`, `prompt_optional`,
-  `prompt_secret`, `prompt_hidden_secret`, `table_header`, `table_row`,
-  `table_footer`
-- **CLI** — `proxyctl help`, `proxyctl version`, `proxyctl status`,
-  `proxyctl menu`, and `proxyctl cert ...`
-- **Safe installer** — single-transaction install: staged lib/binary swap, atomic
-  symlink, metadata init, and a unified rollback that restores the previous
-  installation on any failure. Old artifacts are kept until the final commit.
-- **Test suites** — `smoke.sh` plus per-module suites (`system.sh`, `service.sh`,
-  `network.sh`, `port.sh`, `lock.sh`, `lock_security.sh`, `transaction.sh`,
-  `certificate.sh`)
+- **System abstraction** — distro, architecture, init system, package manager,
+  hostname and package operations
+- **Service abstraction** — unified systemd/OpenRC service API
+- **Network utilities** — IP/domain validation, route/interface detection,
+  public-IP lookup, DNS resolution and TCP connectivity checks
+- **Port utilities** — TCP/UDP listener inspection, process lookup, fail-closed
+  free-port checks and randomized allocation
+- **Process locking** — non-blocking `config` / `cert` / `firewall` `flock`
+  locks under the private `/run/proxyctl/` runtime directory
+- **Config apply transactions** — real Xray/sing-box core validation, validated
+  snapshots, same-directory atomic rename, service health checks and rollback
+- **Shared certificate manager** — ported from xrayctl and generalized for both
+  engines: isolated Certbot, Cloudflare DNS, HTTP standalone/nginx, manual DNS,
+  IP certificates, self-signed/import, renewal metadata and safe deletion
+- **Atomic certificate pair sync** — certificate/key staging, OpenSSL pair
+  validation, previous-pair recovery and engine-neutral consumer restart
+- **Shared certificate access** — `/etc/proxyctl/certs/<identifier>/` plus the
+  `proxyctl-cert` supplementary group for Xray and sing-box
+- **Portable backup/restore** — archives both engine configs, ProxyCTL metadata,
+  managed certificate pairs and optional Cloudflare credentials under config +
+  certificate locks. Restore reuses `apply_candidate` and `_cert_replace_pair`
+  instead of maintaining a second config/certificate transaction mechanism
+- **CLI** — status, certificate management and portable backup management
+- **Safe installer** — transactional library/binary/symlink install and rollback
+- **Phase 2 integration suite** — exercises metadata + locks + config transactions
+  + certificate replacement + portable backup/restore in one temporary runtime
+- **GitHub Actions CI definition** — runs syntax, smoke, module, backup and
+  integration suites on Ubuntu for pushes and pull requests
 
 ## Certificate CLI
 
@@ -92,7 +70,7 @@ proxyctl cert delete <identifier>
 proxyctl cert cloudflare
 ```
 
-ACME behavior intentionally follows xrayctl's mature policy:
+ACME behavior follows the mature xrayctl policy:
 
 - Cloudflare DNS validation does not need port 80.
 - HTTP validation uses standalone mode when port 80 is free.
@@ -104,46 +82,67 @@ ACME behavior intentionally follows xrayctl's mature policy:
   HTTP validation.
 - Manual DNS certificates are recorded as non-auto-renewable.
 
-## Planned (future phases)
+## Backup CLI
 
-- Core installation (Xray, sing-box)
-- Real configuration generation (VLESS, VMess, Trojan, AnyTLS, Hysteria2, …)
-- Backup and restore
-- Firewall setup
-- BBR congestion control
-- Migration from xrayctl / sbctl
+```text
+proxyctl backup create [label]
+proxyctl backup list
+proxyctl backup restore <backup-id>
+```
+
+Portable archives are stored as mode-600 `tar.gz` files under
+`/var/backups/proxyctl/`. They include:
+
+```text
+manifest.json
+metadata/meta.json
+engines/xray/config.json        # when present
+engines/singbox/config.json     # when present
+certs/<identifier>/fullchain.pem
+certs/<identifier>/privkey.pem
+secrets/cloudflare.ini          # when configured
+```
+
+This is intended to preserve the node identity across VPS migration: UUIDs,
+passwords, Reality parameters, transport settings and managed TLS files remain
+unchanged, so clients using the same domain/port generally do not need to be
+re-imported.
+
+Certbot's Python environment, logs and internal lineage/work tree are deliberately
+not portable. Restored managed certificate files remain usable immediately, but
+Let's Encrypt certificates should be reissued on the destination before their
+next renewal so Certbot owns a fresh local lineage.
+
+Restore validates archive paths/types before extraction, validates metadata,
+certificate/key pairs and installed-engine configs, snapshots the current state,
+and then reuses the existing config/certificate transaction APIs. If restore
+fails, ProxyCTL attempts to restore the pre-restore snapshot; a failed rollback
+is reported as `[CRITICAL]` and its recovery directories are retained.
 
 ## V1 Capabilities
 
-| Engine    | Protocols                          |
-|-----------|------------------------------------|
-| Xray      | VLESS, VMess, Trojan, SOCKS5, HTTP |
-| sing-box  | AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP |
+| Engine | Protocols |
+|---|---|
+| Xray | VLESS, VMess, Trojan, SOCKS5, HTTP |
+| sing-box | AnyTLS, VLESS, Hysteria2, Trojan, SOCKS5, HTTP |
 
-## Directory Layout
+### Transport scope
 
 ```text
-proxyctl/
-├── proxyctl.sh              # CLI entry point / dispatcher
-├── install.sh               # System installer (ProxyCTL only)
-├── lib/
-│   ├── core.sh              # Engine dispatcher
-│   ├── ui.sh                # Terminal UI primitives
-│   ├── capability.sh        # Protocol & transport definitions
-│   ├── metadata.sh          # Persistent state management
-│   ├── transaction.sh       # Config transaction staging/apply
-│   ├── menu.sh              # Interactive menus
-│   ├── common/
-│   │   ├── system.sh
-│   │   ├── network.sh
-│   │   ├── port.sh
-│   │   ├── lock.sh
-│   │   ├── certificate.sh
-│   │   ├── backup.sh
-│   │   └── bbr.sh
-│   ├── xray/engine.sh
-│   └── singbox/engine.sh
-└── tests/
+Xray
+  VLESS   → RAW / XHTTP / WebSocket
+  VMess   → RAW / WebSocket
+  Trojan  → RAW / WebSocket
+  SOCKS5  → none
+  HTTP    → none
+
+sing-box
+  AnyTLS     → none
+  VLESS      → RAW / WebSocket
+  Hysteria2  → dedicated HY2 flow
+  Trojan     → RAW / WebSocket
+  SOCKS5     → none
+  HTTP       → none
 ```
 
 ## System Paths
@@ -153,55 +152,61 @@ proxyctl/
 | `/usr/local/sbin/proxyctl` | Binary |
 | `/usr/local/bin/proxyctl` | Symlink |
 | `/usr/local/lib/proxyctl/` | Library |
-| `/var/lib/proxyctl/meta.json` | Metadata |
+| `/var/lib/proxyctl/meta.json` | Manager metadata |
 | `/etc/proxyctl/certs/<id>/fullchain.pem` | Managed certificate copy |
 | `/etc/proxyctl/certs/<id>/privkey.pem` | Managed private-key copy |
 | `/etc/proxyctl/cloudflare.ini` | Cloudflare DNS credentials |
 | `/opt/proxyctl/certbot/` | Isolated Certbot virtual environment |
-| `/var/lib/proxyctl/letsencrypt/config/` | Isolated Certbot lineage/config state |
+| `/var/lib/proxyctl/letsencrypt/config/` | Local Certbot lineage/config state |
 | `/var/lib/proxyctl/letsencrypt/work/` | Certbot work state |
 | `/var/log/proxyctl/certbot/` | Certbot logs |
-| `/var/backups/proxyctl/` | Backups |
-| `/run/proxyctl/` | Private runtime lock directory |
-| `/run/proxyctl/config.lock` | Config lock file |
-| `/run/proxyctl/cert.lock` | Certificate lock file |
-| `/run/proxyctl/firewall.lock` | Firewall lock file |
+| `/var/backups/proxyctl/` | Portable backup archives |
+| `/run/proxyctl/config.lock` | Config lock |
+| `/run/proxyctl/cert.lock` | Certificate lock |
+| `/run/proxyctl/firewall.lock` | Firewall lock |
 
-## Security
+## Security invariants
 
-- Metadata keys are validated against an allowlist; certificate metadata fields
-  are also explicitly allowlisted.
-- Metadata writes use atomic temp-file-in-same-directory + rename and validate
-  the resulting JSON before replacement.
-- Transaction labels, IDs, and stage names are strictly validated.
-- Config apply never overwrites the formal config in place and never applies a
-  different file than the exact snapshot validated by the core.
-- Failed config rollback preserves its transaction directory and `old-config`
-  recovery copy for manual intervention.
-- Locking uses kernel `flock` on held-open fixed fds, never lock-file existence.
-- Certificate identifiers cannot contain path separators/traversal components.
-- Managed certificate directories/files reject symlink targets before replace.
-- Certificate/private-key pairs are validated for parseability and matching
-  public keys before they are installed.
-- Managed pair replacement preserves the previous pair until both new files are
-  staged and validated; failed replacement restores the previous state.
-- Cloudflare credentials are written atomically with mode 600.
+- Actual Xray/sing-box configs remain the configuration source of truth;
+  metadata is auxiliary manager state.
+- Metadata writes are validated and atomically renamed.
+- Transaction labels/IDs/stage names and backup IDs/archive members are
+  validated against strict formats; traversal and link archive entries fail.
+- `apply_candidate` applies the exact snapshot that passed real core validation.
+- Failed config rollback preserves `old-config` and transaction state.
+- Lock files use held-open kernel `flock`, not file-existence semantics.
+- Managed certificate identifiers cannot escape their certificate root.
+- Certificate/private-key public keys must match before replacement.
+- Cloudflare credentials and backup archives are mode 600.
 - Unknown port-80 processes are never stopped automatically.
-- Certbot uses ProxyCTL-specific config/work/log directories and does not reuse
-  `/etc/letsencrypt`.
+- Backup/restore takes locks in the fixed order `config → cert`.
 
-## Development
+## Tests
 
 ```bash
-PROXYCTL_DEV_LIB=./lib ./proxyctl.sh version
-PROXYCTL_LIB=./lib ./proxyctl.sh version
-
 bash tests/smoke.sh
+bash tests/system.sh
+bash tests/service.sh
+bash tests/network.sh
+bash tests/port.sh
 bash tests/lock.sh
 bash tests/lock_security.sh
 bash tests/transaction.sh
 bash tests/certificate.sh
+bash tests/backup.sh
+bash tests/integration.sh
 ```
+
+The repository also contains `.github/workflows/ci.yml` to execute the same
+Phase 2 test stack in GitHub Actions. A workflow definition existing in the
+repository is not itself evidence that a particular commit passed CI; check the
+actual Actions result for the commit being deployed.
+
+## Next phase
+
+Phase 3 can now focus on real core installation and protocol/inbound builders;
+common locking, transactions, certificates, backup/restore and integration
+infrastructure are already separated from engine-specific JSON generation.
 
 ## License
 
