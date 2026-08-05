@@ -24,6 +24,8 @@ readonly PROXYCTL_CERTBOT_WORK="${PROXYCTL_CERTBOT_WORK:-/var/lib/proxyctl/letse
 readonly PROXYCTL_CERTBOT_LOGS="${PROXYCTL_CERTBOT_LOGS:-/var/log/proxyctl/certbot}"
 readonly PROXYCTL_CLOUDFLARE_INI="${PROXYCTL_CLOUDFLARE_INI:-/etc/proxyctl/cloudflare.ini}"
 readonly PROXYCTL_CERT_GROUP="${PROXYCTL_CERT_GROUP:-proxyctl-cert}"
+readonly PROXYCTL_SYSTEMD_UNIT_DIR="${PROXYCTL_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+readonly PROXYCTL_OPENRC_INIT_DIR="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}"
 readonly XRAY_CONFIG="${PROXYCTL_XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
 readonly SINGBOX_CONFIG="${PROXYCTL_SINGBOX_CONFIG:-/etc/sing-box/config.json}"
 
@@ -118,7 +120,7 @@ cmd_core() {
 }
 
 cmd_inbound() {
-    local action="${1:-list}" engine="${2:-}" answer spec
+    local action="${1:-list}" engine="${2:-}" answer
     case "$action" in
         list)
             if [[ -n "$engine" ]]; then inbound_list "$engine"; else
@@ -234,7 +236,7 @@ _main() {
 }
 
 cmd_status() {
-    local count
+    local count config
     heading 'ProxyCTL Status'
     echo "Version: ${PROXYCTL_VERSION}"
     for engine in xray singbox; do
@@ -244,7 +246,8 @@ cmd_status() {
             echo '  Installed: yes'
             echo "  Version:   $(engine_call "$engine" version 2>/dev/null || echo unknown)"
             if engine_call "$engine" is_active; then echo '  Status:    active'; else echo '  Status:    inactive'; fi
-            count=$(inbound_config_file "$engine" 2>/dev/null | xargs -r jq '.inbounds|length' 2>/dev/null || echo '?')
+            config=$(inbound_config_file "$engine" 2>/dev/null || true)
+            if [[ -n "$config" && -f "$config" ]]; then count=$(jq '.inbounds|length' "$config" 2>/dev/null || echo '?'); else count='?'; fi
             echo "  Inbounds:  ${count}"
         else
             echo '  Installed: no'
