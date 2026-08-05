@@ -51,7 +51,7 @@ _port_listening_state() {
     local port="$1"
     local proto="$2"
 
-    local flags out rc
+    local flags out
     if [[ "$proto" == 'tcp' ]]; then
         flags='-H -ltn'
     else
@@ -59,22 +59,24 @@ _port_listening_state() {
     fi
 
     if command -v ss > /dev/null 2>&1; then
-        out=$(ss $flags 2>/dev/null)
-        rc=$?
+        if ! out=$(ss $flags 2>/dev/null); then
+            error 'Unable to inspect listening sockets.'
+            return 2
+        fi
     elif command -v netstat > /dev/null 2>&1; then
         if [[ "$proto" == 'tcp' ]]; then
-            out=$(netstat -ltn 2>/dev/null)
+            if ! out=$(netstat -ltn 2>/dev/null); then
+                error 'Unable to inspect listening sockets.'
+                return 2
+            fi
         else
-            out=$(netstat -lun 2>/dev/null)
+            if ! out=$(netstat -lun 2>/dev/null); then
+                error 'Unable to inspect listening sockets.'
+                return 2
+            fi
         fi
-        rc=$?
     else
         error 'No supported socket inspection tool found.'
-        return 2
-    fi
-
-    if (( rc != 0 )); then
-        error 'Unable to inspect listening sockets.'
         return 2
     fi
 
@@ -92,26 +94,27 @@ _port_listening_state() {
 }
 
 # --- port_is_listening -------------------------------------------------------
+# Usage: port_is_listening <port> [tcp|udp]
+# Protocol defaults to tcp.
 port_is_listening() {
     local port="$1"
     local proto
     port_validate "$port" || return 1
-    proto=$(_port_validate_proto "$2") || return 1
+    proto=$(_port_validate_proto "${2:-tcp}") || return 1
 
     _port_listening_state "$port" "$proto"
 }
 
 # --- port_is_free ------------------------------------------------------------
+# Usage: port_is_free <port> [tcp|udp]
 # 0 = free (not listening), 1 = occupied, 2 = inspection failed.
+# Protocol defaults to tcp.
 port_is_free() {
     local port="$1"
     local proto
     port_validate "$port" || return 1
-    proto=$(_port_validate_proto "$2") || return 1
+    proto=$(_port_validate_proto "${2:-tcp}") || return 1
 
-    # Capture the inspection state (0/1/2) in the else branch — after an
-    # `if` with a false condition bash resets $? to 0, so it cannot be read
-    # after the whole statement.
     local st
     if _port_listening_state "$port" "$proto"; then
         st=0
@@ -149,12 +152,12 @@ _port_process_from_line() {
 # Usage: port_process <port> [tcp|udp]
 # Prints "PID NAME" lines for processes listening on the port. If the port is
 # listening but the process cannot be read, prints "unknown". Returns 1 if the
-# port is not listening at all.
+# port is not listening and 2 if socket inspection fails. Protocol defaults tcp.
 port_process() {
     local port="$1"
     local proto
     port_validate "$port" || return 1
-    proto=$(_port_validate_proto "$2") || return 1
+    proto=$(_port_validate_proto "${2:-tcp}") || return 1
 
     local flags out
     if [[ "$proto" == 'tcp' ]]; then
@@ -164,16 +167,25 @@ port_process() {
     fi
 
     if command -v ss > /dev/null 2>&1; then
-        out=$(ss $flags 2>/dev/null)
+        if ! out=$(ss $flags 2>/dev/null); then
+            error 'Unable to inspect listening sockets.'
+            return 2
+        fi
     elif command -v netstat > /dev/null 2>&1; then
         if [[ "$proto" == 'tcp' ]]; then
-            out=$(netstat -ltnp 2>/dev/null)
+            if ! out=$(netstat -ltnp 2>/dev/null); then
+                error 'Unable to inspect listening sockets.'
+                return 2
+            fi
         else
-            out=$(netstat -lunp 2>/dev/null)
+            if ! out=$(netstat -lunp 2>/dev/null); then
+                error 'Unable to inspect listening sockets.'
+                return 2
+            fi
         fi
     else
         error 'No supported socket inspection tool found.'
-        return 1
+        return 2
     fi
 
     local found=0 printed=0 line addr n proc_line p
@@ -203,15 +215,14 @@ port_process() {
 }
 
 # --- port_require_free -------------------------------------------------------
+# Usage: port_require_free <port> [tcp|udp]
+# Protocol defaults to tcp.
 port_require_free() {
     local port="$1"
     local proto
     port_validate "$port" || return 1
-    proto=$(_port_validate_proto "$2") || return 1
+    proto=$(_port_validate_proto "${2:-tcp}") || return 1
 
-    # Capture the inspection state (0/1/2) in the else branch — after an
-    # `if` with a false condition bash resets $? to 0, so it cannot be read
-    # after the whole statement.
     local st
     if _port_listening_state "$port" "$proto"; then
         st=0
@@ -238,32 +249,48 @@ port_require_free() {
     return 0
 }
 
+# --- _port_random_from_value -------------------------------------------------
+# Maps a non-negative random integer into the inclusive port range. Kept pure
+# so tests can prove that ranges wider than $RANDOM (0-32767) are reachable.
+_port_random_from_value() {
+    local start="$1" end="$2" value="$3"
+    local range=$(( end - start + 1 ))
+    (( value >= 0 )) || return 1
+    printf '%d\n' $(( start + (value % range) ))
+}
+
 # --- _port_random_number -----------------------------------------------------
-# Testable random port generator. Production uses $RANDOM; tests override this
-# function with a deterministic sequence.
+# Production random candidate generator. Two $RANDOM reads provide 30 bits,
+# enough to cover every valid TCP/UDP port range. This is not cryptographic.
 _port_random_number() {
     local start="$1" end="$2"
-    local range=$(( end - start + 1 ))
-    printf '%d\n' $(( start + (RANDOM % range) ))
+    local value=$(( (RANDOM << 15) | RANDOM ))
+    _port_random_from_value "$start" "$end" "$value"
 }
 
 # --- port_random -------------------------------------------------------------
 # Usage: port_random <start> <end> [tcp|udp]
-# Returns a currently-free port in range, up to 100 attempts.
+# Returns a currently-free port in range, up to 100 attempts. Protocol defaults
+# to tcp. Socket inspection failure aborts immediately instead of retrying.
 port_random() {
     local start="$1" end="$2"
     local proto
     port_validate "$start" || { error "Invalid start port: ${start}"; return 1; }
     port_validate "$end"   || { error "Invalid end port: ${end}"; return 1; }
     (( start <= end )) || { error "Start port exceeds end port."; return 1; }
-    proto=$(_port_validate_proto "$3") || return 1
+    proto=$(_port_validate_proto "${3:-tcp}") || return 1
 
-    local i p
+    local i p rc
     for (( i = 0; i < 100; i++ )); do
-        p=$(_port_random_number "$start" "$end")
+        p=$(_port_random_number "$start" "$end") || return 1
         if port_is_free "$p" "$proto"; then
             printf '%s\n' "$p"
             return 0
+        else
+            rc=$?
+            if (( rc == 2 )); then
+                return 2
+            fi
         fi
     done
 
