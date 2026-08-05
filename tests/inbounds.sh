@@ -8,13 +8,17 @@ set -o pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-for c in jq openssl; do command -v "$c" >/dev/null 2>&1 || { echo "requires $c" >&2; exit 2; }; done
+for c in jq openssl flock; do command -v "$c" >/dev/null 2>&1 || { echo "requires $c" >&2; exit 2; }; done
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
 export PROXYCTL_DATA="$ROOT/data"
 export PROXYCTL_META="$PROXYCTL_DATA/meta.json"
 export PROXYCTL_CERTS="$ROOT/certs"
+export PROXYCTL_LOCK_DIR="$ROOT/locks"
+export PROXYCTL_LOCK="$PROXYCTL_LOCK_DIR/config.lock"
+export PROXYCTL_CERT_LOCK="$PROXYCTL_LOCK_DIR/cert.lock"
+export PROXYCTL_FIREWALL_LOCK="$PROXYCTL_LOCK_DIR/firewall.lock"
 export XRAY_CONFIG="$ROOT/xray/config.json"
 export SINGBOX_CONFIG="$ROOT/singbox/config.json"
 mkdir -p "$PROXYCTL_DATA" "$(dirname "$XRAY_CONFIG")" "$(dirname "$SINGBOX_CONFIG")" "$PROXYCTL_CERTS/test.example"
@@ -24,9 +28,11 @@ source "$PROJECT_DIR/lib/core.sh"
 source "$PROJECT_DIR/lib/metadata.sh"
 source "$PROJECT_DIR/lib/common/network.sh"
 source "$PROJECT_DIR/lib/common/port.sh"
+source "$PROJECT_DIR/lib/common/lock.sh"
 source "$PROJECT_DIR/lib/xray/engine.sh"
 source "$PROJECT_DIR/lib/singbox/engine.sh"
 source "$PROJECT_DIR/lib/inbound.sh"
+source "$PROJECT_DIR/lib/inbound_edit.sh"
 source "$PROJECT_DIR/lib/xray/inbound.sh"
 source "$PROJECT_DIR/lib/singbox/inbound.sh"
 
@@ -42,10 +48,12 @@ engine_xray_installed(){ return 0; }
 engine_singbox_installed(){ return 0; }
 engine_xray_config_file(){ printf '%s\n' "$XRAY_CONFIG"; }
 engine_singbox_config_file(){ printf '%s\n' "$SINGBOX_CONFIG"; }
-engine_singbox_inbound_post_change(){ return 0; }
+POST_RC=0
+engine_singbox_inbound_post_change(){ return "$POST_RC"; }
 cert_exists(){ [[ "$1" == test.example ]]; }
 cert_fullchain(){ printf '%s\n' "$PROXYCTL_CERTS/test.example/fullchain.pem"; }
 cert_privkey(){ printf '%s\n' "$PROXYCTL_CERTS/test.example/privkey.pem"; }
+port_is_free(){ return 0; }
 apply_candidate(){
     local engine="$1" candidate="$2" dest
     dest=$(engine_call "$engine" config_file) || return 1
@@ -92,7 +100,6 @@ xlink=$(inbound_share xray x-renamed alice)
 contains "$xlink" 'vless://' 'Xray share emits VLESS URI'
 contains "$xlink" 'pbk=public-key' 'Xray REALITY share uses metadata public key'
 
-# Xray SOCKS5 display name must map to the core protocol name `socks`.
 xsocks=$(jq -cn '{protocol:"SOCKS5",tag:"x-socks",listen:"127.0.0.1",port:31002,client_host:"127.0.0.1",security:"none",user:{username:"",password:""}}')
 ok inbound_add_from_spec xray "$xsocks"
 eqv "$(jq -r '.inbounds[]|select(.tag=="x-socks")|.protocol' "$XRAY_CONFIG")" socks 'SOCKS5 capability maps to Xray socks protocol'
@@ -117,11 +124,28 @@ ok inbound_add_from_spec singbox "$hy2"
 eqv "$(jq -r '.inbounds.singbox["s-hy2"].hy2HopRange' "$PROXYCTL_META")" '20000-20100' 'Hysteria2 hop range is auxiliary metadata'
 contains "$(inbound_share singbox s-hy2 hy)" ':20000-20100?' 'Hysteria2 share exports hop range'
 
+# Post-change failure must roll config and metadata back together.
+POST_RC=1
+failed_spec=$(jq -cn '{protocol:"HTTP",tag:"s-post-fail",listen:"127.0.0.1",listen_port:32003,client_host:"127.0.0.1",user:{username:"u",password:"p"}}')
+before_cfg=$(jq -c . "$SINGBOX_CONFIG"); before_meta=$(jq -c . "$PROXYCTL_META")
+bad inbound_add_from_spec singbox "$failed_spec"
+eqv "$(jq -c . "$SINGBOX_CONFIG")" "$before_cfg" 'post-change failure restores sing-box config'
+eqv "$(jq -c . "$PROXYCTL_META")" "$before_meta" 'post-change failure restores metadata'
+POST_RC=0
+
 ok inbound_delete singbox s-hy2
 eqv "$(jq -r '.inbounds.singbox["s-hy2"] // "missing"' "$PROXYCTL_META")" missing 'sing-box delete cleans inbound metadata'
 ok inbound_delete xray x-socks
 ok inbound_delete xray x-renamed
 eqv "$(jq '.inbounds|length' "$XRAY_CONFIG")" 0 'Xray inbounds can be fully removed'
+
+# Metadata write failure after config replacement is also a full rollback.
+metadata_fail_spec=$(jq -cn --arg uuid "$UUID1" '{protocol:"VMess",tag:"x-meta-fail",listen:"127.0.0.1",port:31010,client_host:"node.example",transport:"RAW",security:"none",user:{name:"alice",uuid:$uuid}}')
+before_cfg=$(jq -c . "$XRAY_CONFIG"); before_meta=$(jq -c . "$PROXYCTL_META")
+inbound_meta_set(){ return 1; }
+bad inbound_add_from_spec xray "$metadata_fail_spec"
+eqv "$(jq -c . "$XRAY_CONFIG")" "$before_cfg" 'metadata failure restores Xray config'
+eqv "$(jq -c . "$PROXYCTL_META")" "$before_meta" 'metadata failure preserves prior metadata'
 
 printf '\nInbound tests: %d passed, %d failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))
