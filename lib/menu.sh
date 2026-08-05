@@ -39,6 +39,16 @@ menu_select_client() {
     if ((${#labels[@]} == 1)); then printf -v "$__var" '%s' "${labels[0]}"; else choose "$__var" 'Select user:' "${labels[@]}"; fi
 }
 
+menu_select_outbound() {
+    local __engine="$1" __tag="$2" engine tag tags=()
+    menu_select_engine engine 1 || return 1
+    while IFS= read -r tag; do [[ -n "$tag" ]] && tags+=("$tag"); done < <(outbound_call "$engine" selectable_tags)
+    ((${#tags[@]})) || { warn "${engine} has no managed proxy/local outbounds."; return 1; }
+    if ((${#tags[@]} == 1)); then tag=${tags[0]}; else choose tag "Select ${engine} outbound:" "${tags[@]}" || return 1; fi
+    printf -v "$__engine" '%s' "$engine"
+    printf -v "$__tag" '%s' "$tag"
+}
+
 menu_backup_ids() {
     local root path
     root=$(backup_root)
@@ -62,7 +72,7 @@ menu_main() {
             'Exit' || { echo 'Goodbye.'; return 0; }
         case "$choice" in
             'Inbound Management') menu_inbound ;;
-            'Outbound Management') warn 'Outbound management is planned for Phase 4.'; pause ;;
+            'Outbound Management') menu_outbound ;;
             'TLS Certificates') menu_certificates ;;
             'Core Management') menu_core ;;
             'System Tools') menu_system ;;
@@ -90,11 +100,12 @@ menu_inbound_manage() {
     local engine="$1" tag="$2" choice new_tag answer config listen port client_host
     while inbound_exists "$engine" "$tag"; do
         heading "Inbound · ${engine}/${tag}"
-        choose choice 'Inbound actions' 'Show JSON' 'Share / client config' 'User management' 'Modify listen / client address' 'Rename' 'Delete' 'Back' || return
+        choose choice 'Inbound actions' 'Show JSON' 'Share / client config' 'User management' 'Set outbound' 'Modify listen / client address' 'Rename' 'Delete' 'Back' || return
         case "$choice" in
             'Show JSON') menu_action inbound_show "$engine" "$tag" ;;
             'Share / client config') menu_action inbound_share "$engine" "$tag" ;;
             'User management') menu_clients "$engine" "$tag" ;;
+            'Set outbound') menu_action outbound_assign_interactive "$engine" "$tag" ;;
             'Modify listen / client address')
                 config=$(inbound_config_file "$engine") || { pause; continue; }
                 listen=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen // "0.0.0.0"' "$config")
@@ -144,6 +155,31 @@ menu_clients() {
                 menu_select_client user "$engine" "$tag" || { pause; continue; }
                 confirm answer "Delete user ${user}?" n || continue
                 [[ "$answer" == y ]] && menu_action inbound_client_delete "$engine" "$tag" "$user"
+                ;;
+            'Back') return ;;
+        esac
+    done
+}
+
+menu_outbound() {
+    while true; do
+        heading 'Outbound Management'
+        local choice engine tag inbound answer
+        choose choice 'Outbound Management' 'List / bindings' 'Add outbound' 'Assign inbound' 'Delete outbound' 'Back' || return
+        case "$choice" in
+            'List / bindings') menu_action cmd_outbound list ;;
+            'Add outbound')
+                menu_select_engine engine 1 || { pause; continue; }
+                menu_action outbound_add_interactive "$engine"
+                ;;
+            'Assign inbound')
+                menu_select_inbound engine inbound || { pause; continue; }
+                menu_action outbound_assign_interactive "$engine" "$inbound"
+                ;;
+            'Delete outbound')
+                menu_select_outbound engine tag || { pause; continue; }
+                confirm answer "Delete outbound ${engine}/${tag}? Managed inbound bindings will revert to direct." n || continue
+                [[ "$answer" == y ]] && menu_action outbound_delete "$engine" "$tag"
                 ;;
             'Back') return ;;
         esac
