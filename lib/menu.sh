@@ -33,10 +33,19 @@ menu_select_inbound() {
 }
 
 menu_select_client() {
-    local __var="$1" engine="$2" tag="$3" line label labels=()
+    local __var="$1" engine="$2" tag="$3" label labels=()
     while IFS=$'\t' read -r label _; do [[ -n "$label" ]] && labels+=("$label"); done < <(inbound_clients "$engine" "$tag")
     ((${#labels[@]})) || { warn 'This inbound has no users.'; return 1; }
     if ((${#labels[@]} == 1)); then printf -v "$__var" '%s' "${labels[0]}"; else choose "$__var" 'Select user:' "${labels[@]}"; fi
+}
+
+menu_backup_ids() {
+    local root path
+    root=$(backup_root)
+    for path in "$root"/proxyctl-*.tar.gz; do
+        [[ -f "$path" && ! -L "$path" ]] || continue
+        printf '%s\n' "${path##*/}"
+    done | sort -r
 }
 
 menu_main() {
@@ -101,7 +110,7 @@ menu_inbound_manage() {
 }
 
 menu_clients() {
-    local engine="$1" tag="$2" choice user label credential answer
+    local engine="$1" tag="$2" choice user label answer
     while true; do
         heading "Users · ${engine}/${tag}"
         inbound_clients "$engine" "$tag" || true
@@ -208,7 +217,7 @@ menu_backup() {
             'Create backup') prompt_optional label 'Backup label (optional)' || true; menu_action backup_create "$label" ;;
             'Restore backup')
                 ids=()
-                while IFS= read -r id; do [[ -n "$id" ]] && ids+=("$id"); done < <(find "$(backup_root)" -maxdepth 1 -type f -name 'proxyctl-*.tar.gz' -printf '%f\n' 2>/dev/null | sort -r)
+                while IFS= read -r id; do [[ -n "$id" ]] && ids+=("$id"); done < <(menu_backup_ids)
                 ((${#ids[@]})) || { warn 'No backups found.'; pause; continue; }
                 if ((${#ids[@]} == 1)); then id=${ids[0]}; else choose id 'Select backup:' "${ids[@]}" || continue; fi
                 confirm answer "Restore ${id}? Current state will be snapshotted for rollback." n || continue
