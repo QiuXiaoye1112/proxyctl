@@ -34,6 +34,9 @@ jobs:
       - name: UI propagation
         run: bash tests/ui.sh
 
+      - name: Real interactive spec collectors
+        run: bash tests/interactive_specs.sh
+
       - name: Interactive menu E2E
         run: bash tests/menu.sh
 
@@ -113,6 +116,7 @@ jobs:
               bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep >/dev/null &&
             bash tests/smoke.sh &&
             bash tests/ui.sh &&
+            bash tests/interactive_specs.sh &&
             bash tests/menu.sh &&
             bash tests/system.sh &&
             bash tests/service.sh &&
@@ -128,6 +132,7 @@ jobs:
             apk add --no-cache bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep openrc >/dev/null &&
             bash tests/smoke.sh &&
             bash tests/ui.sh &&
+            bash tests/interactive_specs.sh &&
             bash tests/menu.sh &&
             bash tests/system.sh &&
             bash tests/service.sh &&
