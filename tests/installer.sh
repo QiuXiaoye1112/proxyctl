@@ -36,6 +36,16 @@ run_installer(){
     return "$rc"
 }
 
+run_piped_installer(){
+    local root="$1" out rc
+    set +e
+    out=$(PROXYCTL_INSTALL_ROOT="$root" PROXYCTL_BOOTSTRAP_SOURCE_DIR="$PROJECT_DIR" bash -s <"$PROJECT_DIR/install.sh" 2>&1)
+    rc=$?
+    set -e
+    printf '%s\n' "$out"
+    return "$rc"
+}
+
 seed_old_install(){
     local root="$1"
     mkdir -p "$(dirname "$root/usr/local/sbin/proxyctl")" "$root/usr/local/lib/proxyctl" "$root/usr/local/bin" "$root/var/lib/proxyctl"
@@ -78,7 +88,7 @@ set +e; out=$(run_installer "$ROOT" after-bin-swap); rc=$?; set -e
 eqv "$(file_hash "$ROOT/usr/local/sbin/proxyctl")" "$old_bin" 'after-bin-swap rollback restores binary'
 eqv "$(file_hash "$ROOT/usr/local/lib/proxyctl/.old-marker")" "$old_lib" 'after-bin-swap rollback restores library'
 
-# Successful install commits all layout and permissions.
+# Successful local install commits all layout and permissions.
 rm -rf "$ROOT"; mkdir -p "$ROOT"
 set +e; out=$(run_installer "$ROOT"); rc=$?; set -e
 ((rc == 0)) && pass 'successful install exits zero' || fail "successful install exits zero: $out"
@@ -95,6 +105,15 @@ absent "$ROOT/usr/local/sbin/proxyctl.new" 'successful install cleans binary.new
 absent "$ROOT/usr/local/sbin/proxyctl.old" 'successful install cleans binary.old'
 absent "$ROOT/usr/local/lib/proxyctl.new" 'successful install cleans library.new'
 absent "$ROOT/usr/local/lib/proxyctl.old" 'successful install cleans library.old'
+
+# Piped bootstrap mode must work without BASH_SOURCE pointing at a repository.
+rm -rf "$ROOT"; mkdir -p "$ROOT"
+set +e; out=$(run_piped_installer "$ROOT"); rc=$?; set -e
+((rc == 0)) && pass 'piped bootstrap install exits zero' || fail "piped bootstrap install exits zero: $out"
+present "$ROOT/usr/local/sbin/proxyctl" 'piped bootstrap writes binary'
+present "$ROOT/usr/local/lib/proxyctl" 'piped bootstrap writes library'
+present "$ROOT/var/lib/proxyctl/meta.json" 'piped bootstrap initializes metadata'
+eqv "$(readlink "$ROOT/usr/local/bin/proxyctl")" "$ROOT/usr/local/sbin/proxyctl" 'piped bootstrap creates intended symlink'
 
 # Best-effort cleanup failure must not turn a committed install into rollback.
 rm -rf "$ROOT"; mkdir -p "$ROOT"; seed_old_install "$ROOT"
