@@ -77,6 +77,7 @@ _verify_lib_contents() {
         client_rename.sh
         outbound.sh
         runtime.sh
+        uninstall.sh
         xray/engine.sh
         xray/inbound.sh
         xray/outbound.sh
