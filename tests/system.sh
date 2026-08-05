@@ -150,7 +150,6 @@ fi
 echo ''
 echo '--- 4. Init system detection ---'
 
-# Forced systemd
 PROXYCTL_TEST_INIT=systemd
 set +e
 init_out=$(system_init 2>/dev/null)
@@ -158,7 +157,6 @@ init_rc=$?
 set -e
 assert_eq "$init_out" 'systemd' 'forced init: systemd'
 
-# Forced openrc
 PROXYCTL_TEST_INIT=openrc
 set +e
 init_out=$(system_init 2>/dev/null)
@@ -166,7 +164,6 @@ init_rc=$?
 set -e
 assert_eq "$init_out" 'openrc' 'forced init: openrc'
 
-# Forced unsupported must fail
 PROXYCTL_TEST_INIT=bogus
 set +e
 init_out=$(system_init 2>/dev/null)
@@ -178,7 +175,6 @@ else
     fail "forced init: bogus should fail (out='${init_out}', rc=${init_rc})"
 fi
 
-# Real detection (unset override)
 unset PROXYCTL_TEST_INIT
 set +e
 real_init=$(system_init 2>/dev/null)
@@ -301,7 +297,7 @@ else
 fi
 
 # ============================================================================
-# 10. Package manager mapping (pure matrix)
+# 10. Package manager mapping (deterministic matrix)
 # ============================================================================
 echo ''
 echo '--- 10. Package manager mapping ---'
@@ -326,20 +322,17 @@ pm_case alpine   'apk'     'alpine → apk'
 pm_case fedora   'dnf'     'fedora → dnf'
 pm_case arch     'pacman'  'arch → pacman'
 
-# RHEL-family → dnf or yum (host-dependent availability)
-for d in centos rocky almalinux; do
-    set +e
-    got=$(_system_package_manager_for_distro "$d" 2>/dev/null)
-    rc=$?
-    set -e
-    if (( rc == 0 )) && { [[ "$got" == 'dnf' ]] || [[ "$got" == 'yum' ]]; }; then
-        pass "$d → ${got}"
-    else
-        fail "$d mapping (got '$got', rc=$rc)"
-    fi
+# RHEL-family mapping is deterministic in both branches; never depend on host dnf.
+_system_has_dnf() { return 0; }
+for d in centos rocky almalinux rhel; do
+    pm_case "$d" 'dnf' "$d → dnf when dnf is available"
 done
 
-# Unknown distro must be rejected
+_system_has_dnf() { return 1; }
+for d in centos rocky almalinux rhel; do
+    pm_case "$d" 'yum' "$d → yum when dnf is unavailable"
+done
+
 set +e
 got=$(_system_package_manager_for_distro 'slackware' 2>/dev/null)
 rc=$?
@@ -351,12 +344,11 @@ else
 fi
 
 # ============================================================================
-# 11. Package API guards (root + argument validation)
+# 11. Package API guards and dispatch (fully mocked)
 # ============================================================================
 echo ''
 echo '--- 11. Package API guards ---'
 
-# Mock the package manager binary so nothing real is executed.
 PKG_MOCK_DIR=$(mktemp -d)
 export PKG_TEST_LOG="${PKG_MOCK_DIR}/pkg-calls.log"
 cat > "${PKG_MOCK_DIR}/apt-get" <<'PKGEOF'
@@ -367,11 +359,12 @@ PKGEOF
 chmod +x "${PKG_MOCK_DIR}/apt-get"
 export PATH="${PKG_MOCK_DIR}:${PATH}"
 
-# Root/arg mocks — decouple from the real EUID.
+# Root and package-manager mocks make this section independent of the host OS.
 mock_root()     { system_is_root() { return 0; }; }
 mock_non_root() { system_is_root() { return 1; }; }
+mock_package_manager_apt() { system_package_manager() { printf '%s\n' 'apt'; }; }
+mock_package_manager_apt
 
-# No packages specified → rejected even as root.
 mock_root
 : > "${PKG_TEST_LOG}"
 set +e
@@ -395,7 +388,6 @@ else
     fail 'package_remove with no packages should be rejected'
 fi
 
-# As root, package_install dispatches to the (mocked) package manager.
 : > "${PKG_TEST_LOG}"
 set +e
 package_install test-package > /dev/null 2>&1
@@ -406,9 +398,32 @@ if (( pkg_rc == 0 )); then
 else
     fail 'package_install as root should succeed'
 fi
-assert_eq "$(cat "${PKG_TEST_LOG}")" 'apt-get install -y test-package' 'package_install calls apt-get install -y'
+assert_eq "$(cat "${PKG_TEST_LOG}")" 'apt-get install -y test-package' 'package_install calls mocked apt-get install -y'
 
-# Without root, every package API is refused and nothing is invoked.
+: > "${PKG_TEST_LOG}"
+set +e
+package_remove test-package > /dev/null 2>&1
+pkg_rc=$?
+set -e
+if (( pkg_rc == 0 )); then
+    pass 'package_remove as root succeeds'
+else
+    fail 'package_remove as root should succeed'
+fi
+assert_eq "$(cat "${PKG_TEST_LOG}")" 'apt-get remove -y test-package' 'package_remove calls mocked apt-get remove -y'
+
+: > "${PKG_TEST_LOG}"
+set +e
+package_update_index > /dev/null 2>&1
+pkg_rc=$?
+set -e
+if (( pkg_rc == 0 )); then
+    pass 'package_update_index as root succeeds'
+else
+    fail 'package_update_index as root should succeed'
+fi
+assert_eq "$(cat "${PKG_TEST_LOG}")" 'apt-get update' 'package_update_index calls mocked apt-get update'
+
 mock_non_root
 
 : > "${PKG_TEST_LOG}"
@@ -421,7 +436,7 @@ if (( pkg_rc != 0 )); then
 else
     fail 'package_install should fail without root'
 fi
-assert_eq "$(cat "${PKG_TEST_LOG}")" '' 'package_install does not invoke apt-get without root'
+assert_eq "$(cat "${PKG_TEST_LOG}")" '' 'package_install does not invoke package manager without root'
 
 : > "${PKG_TEST_LOG}"
 set +e
@@ -433,6 +448,7 @@ if (( pkg_rc != 0 )); then
 else
     fail 'package_remove should fail without root'
 fi
+assert_eq "$(cat "${PKG_TEST_LOG}")" '' 'package_remove does not invoke package manager without root'
 
 : > "${PKG_TEST_LOG}"
 set +e
@@ -444,6 +460,7 @@ if (( pkg_rc != 0 )); then
 else
     fail 'package_update_index should fail without root'
 fi
+assert_eq "$(cat "${PKG_TEST_LOG}")" '' 'package_update_index does not invoke package manager without root'
 
 rm -rf "${PKG_MOCK_DIR}"
 
