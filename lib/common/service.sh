@@ -47,7 +47,15 @@ service_exists() {
     init=$(system_init) || return 1
     case "$init" in
         systemd)
-            systemctl list-unit-files --type=service "${service}.service" > /dev/null 2>&1
+            # `systemctl list-unit-files <name>` may return success even when
+            # nothing matches. LoadState gives an explicit `not-found` value.
+            local load_state
+            load_state=$(systemctl show \
+                --property=LoadState \
+                --value \
+                "${service}.service" \
+                2>/dev/null) || return 1
+            [[ -n "$load_state" && "$load_state" != 'not-found' ]]
             ;;
         openrc)
             [[ -x "/etc/init.d/${service}" ]]
