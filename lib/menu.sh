@@ -87,14 +87,24 @@ menu_inbound() {
 }
 
 menu_inbound_manage() {
-    local engine="$1" tag="$2" choice new_tag answer
+    local engine="$1" tag="$2" choice new_tag answer config listen port client_host
     while inbound_exists "$engine" "$tag"; do
         heading "Inbound · ${engine}/${tag}"
-        choose choice 'Inbound actions' 'Show JSON' 'Share / client config' 'User management' 'Rename' 'Delete' 'Back' || return
+        choose choice 'Inbound actions' 'Show JSON' 'Share / client config' 'User management' 'Modify listen / client address' 'Rename' 'Delete' 'Back' || return
         case "$choice" in
             'Show JSON') menu_action inbound_show "$engine" "$tag" ;;
             'Share / client config') menu_action inbound_share "$engine" "$tag" ;;
             'User management') menu_clients "$engine" "$tag" ;;
+            'Modify listen / client address')
+                config=$(inbound_config_file "$engine") || { pause; continue; }
+                listen=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen // "0.0.0.0"' "$config")
+                if [[ "$engine" == xray ]]; then port=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.port' "$config"); else port=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen_port' "$config"); fi
+                client_host=$(inbound_meta_get "$engine" "$tag" clientHost 2>/dev/null || true)
+                prompt_value listen 'Listen address' "$listen" || continue
+                prompt_value port 'Listen port' "$port" || continue
+                prompt_optional client_host "Client/server address (current: ${client_host:-auto})" || true
+                menu_action inbound_modify_listen "$engine" "$tag" "$listen" "$port" "$client_host"
+                ;;
             'Rename')
                 prompt_value new_tag 'New inbound tag' "$tag" || continue
                 if inbound_rename "$engine" "$tag" "$new_tag"; then tag=$new_tag; fi
@@ -110,15 +120,20 @@ menu_inbound_manage() {
 }
 
 menu_clients() {
-    local engine="$1" tag="$2" choice user label answer
+    local engine="$1" tag="$2" choice user label new_name answer
     while true; do
         heading "Users · ${engine}/${tag}"
         inbound_clients "$engine" "$tag" || true
-        choose choice 'User Management' 'Add user' 'Rotate credential' 'Delete user' 'Back' || return
+        choose choice 'User Management' 'Add user' 'Rename user' 'Rotate credential' 'Delete user' 'Back' || return
         case "$choice" in
             'Add user')
                 prompt_value label 'User name' "user-$(inbound_random_hex 2)" || continue
                 menu_action inbound_client_add "$engine" "$tag" "$label"
+                ;;
+            'Rename user')
+                menu_select_client user "$engine" "$tag" || { pause; continue; }
+                prompt_value new_name 'New user name' "$user" || continue
+                menu_action inbound_client_rename "$engine" "$tag" "$user" "$new_name"
                 ;;
             'Rotate credential')
                 menu_select_client user "$engine" "$tag" || { pause; continue; }
