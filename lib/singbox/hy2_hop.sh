@@ -35,7 +35,7 @@ _singbox_hy2_hop_backend() {
 }
 
 singbox_hy2_hop_check_conflicts() {
-    local tag="$1" range="$2" internal_port="${3:-}" start end config other other_port other_range os_port
+    local tag="$1" range="$2" internal_port="${3:-}" start end config other other_port other_range os_port os oe
     _singbox_validate_hop_range "$range" || return 1
     start=${range%-*}; end=${range#*-}
     [[ -z "$internal_port" ]] || ! (( internal_port >= 10#$start && internal_port <= 10#$end )) || {
@@ -54,7 +54,6 @@ singbox_hy2_hop_check_conflicts() {
     fi
     while IFS=$'\t' read -r other other_range; do
         [[ "$other" == "$tag" || -z "$other_range" ]] && continue
-        local os oe
         os=${other_range%-*}; oe=${other_range#*-}
         if ((10#$start <= 10#$oe && 10#$end >= 10#$os)); then
             error "Hop range ${range} overlaps ${other} (${other_range})."
@@ -62,9 +61,8 @@ singbox_hy2_hop_check_conflicts() {
         fi
     done < <(jq -r '.inbounds.singbox // {} | to_entries[] | select((.value.hy2HopRange//"")!="") | [.key,.value.hy2HopRange]|@tsv' "$PROXYCTL_META" 2>/dev/null)
 
-    # Do not silently redirect a UDP service that is already listening anywhere
-    # in the requested range. Full range scans can be expensive, so inspect the
-    # current UDP socket table once and compare numerically.
+    # Inspect current UDP listeners once. Never redirect a range that would
+    # capture an unrelated UDP service; the HY2 internal port itself is exempt.
     if command -v ss >/dev/null 2>&1; then
         while IFS= read -r os_port; do
             [[ "$os_port" =~ ^[0-9]+$ ]] || continue
@@ -76,6 +74,18 @@ singbox_hy2_hop_check_conflicts() {
     fi
 }
 
+_singbox_hy2_hop_validate_all() {
+    local config tag range target
+    config=$(engine_singbox_config_file)
+    [[ -f "$config" ]] || return 0
+    while IFS=$'\t' read -r tag range; do
+        [[ -n "$tag" && -n "$range" ]] || continue
+        target=$(jq -r --arg tag "$tag" '.inbounds[]?|select(.tag==$tag and .type=="hysteria2")|.listen_port // empty' "$config")
+        port_validate "$target" || { error "Hysteria2 hop metadata references a missing/invalid inbound: ${tag}"; return 1; }
+        singbox_hy2_hop_check_conflicts "$tag" "$range" "$target" || return 1
+    done < <(jq -r '.inbounds.singbox // {} | to_entries[] | select((.value.hy2HopRange//"")!="") | [.key,.value.hy2HopRange]|@tsv' "$PROXYCTL_META")
+}
+
 singbox_hy2_hop_restore_locked() {
     local count backend config tag range target start end cmd
     config=$(engine_singbox_config_file)
@@ -84,6 +94,7 @@ singbox_hy2_hop_restore_locked() {
         singbox_hy2_hop_clear_locked
         return 0
     fi
+    _singbox_hy2_hop_validate_all || return 1
     backend=$(_singbox_hy2_hop_backend) || return 1
     singbox_hy2_hop_clear_locked
     if [[ "$backend" == nft ]]; then
@@ -120,25 +131,28 @@ singbox_hy2_hop_restore() {
 }
 
 _singbox_hy2_hop_boot_service_remove() {
+    local systemd_dir="${PROXYCTL_SYSTEMD_UNIT_DIR:-/etc/systemd/system}" openrc_dir="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}"
     case "$(system_init 2>/dev/null || true)" in
         systemd)
             systemctl disable proxyctl-hy2-hop.service >/dev/null 2>&1 || true
-            rm -f -- /etc/systemd/system/proxyctl-hy2-hop.service
+            rm -f -- "${systemd_dir}/proxyctl-hy2-hop.service"
             systemctl daemon-reload >/dev/null 2>&1 || true
             ;;
         openrc)
             rc-update del proxyctl-hy2-hop default >/dev/null 2>&1 || true
-            rm -f -- /etc/init.d/proxyctl-hy2-hop
+            rm -f -- "${openrc_dir}/proxyctl-hy2-hop"
             ;;
     esac
 }
 
 _singbox_hy2_hop_boot_service_install() {
     local target="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}" unit
+    local systemd_dir="${PROXYCTL_SYSTEMD_UNIT_DIR:-/etc/systemd/system}" openrc_dir="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}"
     case "$(system_init 2>/dev/null || true)" in
         systemd)
-            unit=/etc/systemd/system/proxyctl-hy2-hop.service
+            unit="${systemd_dir}/proxyctl-hy2-hop.service"
             [[ ! -L "$unit" ]] || { error "Refusing symlink unit: ${unit}"; return 1; }
+            mkdir -p -- "$systemd_dir" || return 1
             cat >"$unit" <<EOF
 [Unit]
 Description=ProxyCTL Hysteria2 port hopping redirects
@@ -159,8 +173,9 @@ EOF
             systemctl enable proxyctl-hy2-hop.service >/dev/null || return 1
             ;;
         openrc)
-            unit=/etc/init.d/proxyctl-hy2-hop
+            unit="${openrc_dir}/proxyctl-hy2-hop"
             [[ ! -L "$unit" ]] || { error "Refusing symlink service: ${unit}"; return 1; }
+            mkdir -p -- "$openrc_dir" || return 1
             cat >"$unit" <<EOF
 #!/sbin/openrc-run
 # managed by ProxyCTL
@@ -182,6 +197,7 @@ singbox_hy2_hop_sync() {
     system_is_root || { error 'Hysteria2 port hopping requires root.'; return 1; }
     count=$(singbox_hy2_hop_count) || return 1
     if (( count > 0 )); then
+        _singbox_hy2_hop_validate_all || return 1
         _singbox_hy2_hop_boot_service_install || return 1
         singbox_hy2_hop_restore
     else
@@ -191,8 +207,9 @@ singbox_hy2_hop_sync() {
 }
 
 engine_singbox_inbound_post_change() {
-    # Only HY2 metadata produces rules, but syncing all is cheap and removes
-    # stale rules after delete/rename as well.
+    # Validate before writing NAT state. The shared inbound layer rolls a newly
+    # created inbound back if this post-create hook fails.
+    _singbox_hy2_hop_validate_all || return 1
     if (( $(singbox_hy2_hop_count 2>/dev/null || echo 0) > 0 )); then
         singbox_hy2_hop_sync
     else
