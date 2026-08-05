@@ -109,7 +109,7 @@ die() {
 
 critical() {
     local text="$1"
-    echo -e "${COLOR_RED}[严重]${COLOR_RESET} ${text}" >&2
+    echo -e "${COLOR_RED}[严重]${COLOR_RESET} [CRITICAL] ${text}" >&2
 }
 
 pause() {
