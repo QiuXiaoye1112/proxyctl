@@ -26,7 +26,7 @@ _ui_translate_prompt() {
     local text="$1"
     case "$text" in
         'Select Xray protocol:'|'Select sing-box protocol:') printf '%s' '选择入站协议' ;;
-        'Inbound tag') printf '%s' '入站名称' ;;
+        'Inbound tag') printf '%s' '入站标签' ;;
         'Outbound tag') printf '%s' '出站标签' ;;
         'Listen address') printf '%s' '监听地址' ;;
         'Listen port') printf '%s' '监听端口' ;;
@@ -65,6 +65,8 @@ _ui_translate_prompt() {
 _ui_translate_option() {
     local text="$1"
     case "$text" in
+        xray) printf '%s' 'Xray' ;;
+        singbox) printf '%s' 'sing-box' ;;
         single) printf '%s' '单端口' ;;
         hopping) printf '%s' '端口跳跃' ;;
         reality) printf '%s' 'REALITY' ;;
@@ -91,11 +93,7 @@ _ui_inside_data_collector() {
 }
 
 ui_clear_screen() { clear 2>/dev/null || printf '\033[2J\033[H' 2>/dev/null || true; }
-
-heading() {
-    local text="$1"
-    printf '\n%s%s%s\n' "${COLOR_BOLD}${COLOR_CYAN}" "$text" "$COLOR_RESET"
-}
+heading() { printf '\n%s%s%s\n' "${COLOR_BOLD}${COLOR_CYAN}" "$1" "$COLOR_RESET"; }
 
 info() {
     local text="$1"
@@ -105,7 +103,6 @@ info() {
         printf '%s[信息]%s %s\n' "$COLOR_GREEN" "$COLOR_RESET" "$text"
     fi
 }
-
 warn() { printf '%s[警告]%s %s\n' "$COLOR_YELLOW" "$COLOR_RESET" "$1" >&2; }
 error() { printf '%s[错误]%s %s\n' "$COLOR_RED" "$COLOR_RESET" "$1" >&2; }
 die() { error "$1"; exit "${2:-1}"; }
@@ -120,10 +117,7 @@ pause() {
 confirm() {
     local __var="$1" _ui_prompt="${2:-确定继续吗？}" _ui_default="${3:-n}" _ui_answer='' _ui_suffix
     [[ "$_ui_default" == y ]] && _ui_suffix='[Y/n]' || _ui_suffix='[y/N]'
-    if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then
-        error '交互确认需要在终端中执行。'
-        return 1
-    fi
+    if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then error '交互确认需要在终端中执行。'; return 1; fi
     printf '%s %s ' "$_ui_prompt" "$_ui_suffix" >&2
     read -r _ui_answer || { printf '\n' >&2; _ui_answer="$_ui_default"; }
     _ui_answer="${_ui_answer:-$_ui_default}"
@@ -138,10 +132,6 @@ choose() {
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     ((_ui_count > 0)) || { error '没有可选项。'; return 1; }
     [[ -t 0 || -n "${PROXYCTL_NO_TTY_GUARD:-}" ]] || { error '交互选择需要在终端中执行。'; return 1; }
-
-    # Human-facing interaction always goes to stderr. Some callers collect
-    # machine-readable JSON from stdout via $(...), exactly like xrayctl's
-    # builders, so stdout must remain clean.
     printf '%s\n' "$_ui_prompt" >&2
     for _ui_i in "${!_ui_options[@]}"; do
         _ui_display=$(_ui_translate_option "${_ui_options[$_ui_i]}")
@@ -163,10 +153,7 @@ prompt_value() {
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     while true; do
         if [[ -n "$_ui_default" ]]; then
-            if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then
-                printf -v "$__var" '%s' "$_ui_default"
-                return 0
-            fi
+            if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then printf -v "$__var" '%s' "$_ui_default"; return 0; fi
             printf '%s [%s]: ' "$_ui_prompt" "$_ui_default" >&2
             read -r _ui_value || { printf '\n' >&2; warn '输入已中断。'; return 1; }
             _ui_value="${_ui_value:-$_ui_default}"
@@ -184,10 +171,7 @@ prompt_value() {
 prompt_optional() {
     local __var="$1" _ui_prompt="$2" _ui_default="${3:-}" _ui_value=''
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
-    if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then
-        printf -v "$__var" '%s' "$_ui_default"
-        return 0
-    fi
+    if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then printf -v "$__var" '%s' "$_ui_default"; return 0; fi
     printf '%s: ' "$_ui_prompt" >&2
     read -r _ui_value || { printf '\n' >&2; warn '输入已中断。'; return 1; }
     printf -v "$__var" '%s' "${_ui_value:-$_ui_default}"
@@ -214,6 +198,36 @@ prompt_hidden_secret() {
         [[ -n "$_ui_value" ]] || warn '不能为空，请重新输入。'
     done
     printf -v "$__var" '%s' "$_ui_value"
+}
+
+# Width-aware table primitives are copied from xrayctl's interaction layer so
+# Chinese headers and mixed CJK/ASCII values stay aligned in terminals.
+display_width() {
+    local __var="$1" value="$2" char code computed_width=0 i
+    for ((i=0; i<${#value}; i++)); do
+        char=${value:i:1}
+        printf -v code '%d' "'$char"
+        if ((code < 0 || code > 127)); then ((computed_width+=2)); else ((computed_width+=1)); fi
+    done
+    printf -v "$__var" '%s' "$computed_width"
+}
+print_table_cell() {
+    local value="$1" target_width="$2" width padding
+    display_width width "$value"
+    padding=$((target_width-width)); ((padding > 0)) || padding=1
+    printf '%s%*s' "$value" "$padding" ''
+}
+print_table_cell_clipped() {
+    local value="$1" target_width="$2" width limit clipped='' used=0 char char_width i
+    display_width width "$value"
+    if ((width < target_width)); then print_table_cell "$value" "$target_width"; return; fi
+    limit=$((target_width-4)); ((limit > 0)) || limit=1
+    for ((i=0; i<${#value}; i++)); do
+        char=${value:i:1}; display_width char_width "$char"
+        ((used+char_width <= limit)) || break
+        clipped+=$char; ((used+=char_width))
+    done
+    print_table_cell "${clipped}..." "$target_width"
 }
 
 table_header() {
