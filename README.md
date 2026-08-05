@@ -37,10 +37,11 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
   inspection errors, and randomized free-port allocation
 - **Process locking** — `flock`-backed `config`/`cert`/`firewall` locks on fixed
   fds with non-blocking `lock_acquire`, idempotent `lock_release`,
-  `lock_is_held`, and `with_lock` (preserves the command exit code and never
-  releases a lock the caller already held). Locks are released by the kernel
-  on process exit, including crash or SIGKILL — a leftover lock file is not a
-  lock and is never deleted
+  `lock_is_held`, and `with_lock`. Runtime lock files live under the dedicated
+  `/run/proxyctl/` directory rather than directly in the shared `/run/lock`;
+  symlink, special-file, foreign-owner, and insecure-parent lock paths are
+  rejected before opening. Locks are released automatically by the kernel on
+  process exit and lock files are never deleted.
 - **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
@@ -49,7 +50,8 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
   symlink, metadata init, and a unified rollback that restores the previous
   installation on any failure. Old artifacts are kept until the final commit.
 - **Test suites** — `smoke.sh` (core contract) plus per-module suites
-  (`system.sh`, `service.sh`, `network.sh`, `port.sh`)
+  (`system.sh`, `service.sh`, `network.sh`, `port.sh`, `lock.sh`,
+  `lock_security.sh`)
 
 ## Planned (future phases)
 
@@ -58,7 +60,6 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
 - TLS certificate management (self-signed + ACME)
 - Configuration apply transactions (`apply_candidate`)
 - Backup and restore
-- Firewall setup
 - Firewall setup
 - BBR congestion control
 - Migration from xrayctl / sbctl
@@ -93,7 +94,7 @@ proxyctl/
 │   │   └── bbr.sh
 │   ├── xray/engine.sh       # Xray engine
 │   └── singbox/engine.sh    # sing-box engine
-└── tests/smoke.sh           # Test suite
+└── tests/                   # Smoke and per-module suites
 ```
 
 ## System Paths
@@ -106,9 +107,10 @@ proxyctl/
 | `/var/lib/proxyctl/meta.json`     | Metadata       |
 | `/etc/proxyctl/certs/`            | Certificates   |
 | `/var/backups/proxyctl/`          | Backups        |
-| `/run/lock/proxyctl.lock`         | Config lock file   |
-| `/run/lock/proxyctl-cert.lock`    | Certificate lock file |
-| `/run/lock/proxyctl-firewall.lock`| Firewall lock file |
+| `/run/proxyctl/`                  | Private runtime lock directory |
+| `/run/proxyctl/config.lock`       | Config lock file |
+| `/run/proxyctl/cert.lock`         | Certificate lock file |
+| `/run/proxyctl/firewall.lock`     | Firewall lock file |
 
 ## Security
 
@@ -122,10 +124,11 @@ proxyctl/
   until the final commit, and any failure restores the previous installation
   (including first-install cleanup)
 - Data directories are created with mode 700 (including the transaction root)
-- Locking uses kernel `flock` on a held-open fd, never lock-file existence;
-  lock files are never deleted (deleting one would let two processes lock
-  different inodes and both win), and lock names are strictly mapped to fixed
-  paths — no user input is ever spliced into a path
+- Locking uses kernel `flock` on held-open fixed fds, never lock-file existence.
+  The dedicated runtime directory is created mode 700; lock files are mode 600,
+  never deleted, and opened without truncation. Symlink parents/files, special
+  files, foreign-owned paths, and group/world-writable lock directories are
+  rejected before any lock fd is opened.
 
 ## Development
 
@@ -136,8 +139,10 @@ PROXYCTL_DEV_LIB=./lib ./proxyctl.sh version
 # Simulate installed layout
 PROXYCTL_LIB=./lib ./proxyctl.sh version
 
-# Run tests
+# Run core and lock tests
 bash tests/smoke.sh
+bash tests/lock.sh
+bash tests/lock_security.sh
 ```
 
 ## License
