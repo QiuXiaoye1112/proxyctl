@@ -5,12 +5,14 @@
 
 # --- bbr_enable -------------------------------------------------------------
 bbr_enable() {
-    # Stub
-    echo "Not implemented"
+    # Stub — mutating operation, must fail closed.
+    error "BBR enable is not implemented."
+    return 1
 }
 
 # --- bbr_status -------------------------------------------------------------
 bbr_status() {
-    # Stub
-    echo "Not implemented"
+    # Stub — query stub, warn and fail.
+    warn "BBR status check is not implemented."
+    return 1
 }

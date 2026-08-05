@@ -1,8 +1,15 @@
-# ProxyCTL 0.1.0
+# ProxyCTL 0.1.1
 
 Unified proxy manager for Xray and sing-box.
 
-> **Phase 1 — Architecture Skeleton**
+> **Phase 1 — Architecture Skeleton (Hardened)**
+
+## Requirements
+
+- Linux
+- Bash 4.0+
+- jq
+- flock
 
 ## Implemented
 
@@ -12,13 +19,13 @@ Unified proxy manager for Xray and sing-box.
 - **Capability system** — V1 protocol and transport definitions (no hard-coded menus)
 - **Menu skeleton** — interactive terminal UI with inbound creation wizard
 - **Metadata** — JSON-backed persistent state at `/var/lib/proxyctl/meta.json`
-- **Transaction framework** — atomic staging with commit/rollback
+- **Transaction staging framework** — staging with commit/rollback and path-safety guards
 - **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
 - **CLI** — `proxyctl help`, `proxyctl version`, `proxyctl status`, `proxyctl menu`
-- **Smoke test suite** — 79+ automated assertions
-- **Bash 3.2+ compatible**
+- **Safe installer** — staged lib/binary installation with automatic rollback on failure
+- **Smoke test suite** — comprehensive security and functional assertions
 
 ## Planned (future phases)
 
@@ -49,7 +56,7 @@ proxyctl/
 │   ├── ui.sh                # Terminal UI primitives
 │   ├── capability.sh        # Protocol & transport definitions
 │   ├── metadata.sh          # Persistent state management
-│   ├── transaction.sh       # Config transactions
+│   ├── transaction.sh       # Config transaction staging
 │   ├── menu.sh              # Interactive menus
 │   ├── common/              # Shared utilities
 │   │   ├── system.sh
@@ -75,6 +82,17 @@ proxyctl/
 | `/etc/proxyctl/certs/`            | Certificates   |
 | `/var/backups/proxyctl/`          | Backups        |
 | `/run/lock/proxyctl.lock`         | Lock file      |
+
+## Security
+
+- Metadata keys are validated against an allowlist — no dynamic jq key injection
+- Transaction labels, IDs, and stage names are strictly validated
+- Transaction path safety uses canonical path resolution (realpath or cd+pwd -P)
+- Metadata writes use atomic temp-file-in-same-directory + mv
+- Corrupt or invalid JSON writes are detected and rejected before overwriting metadata
+- All unimplemented mutating operations fail closed (non-zero exit)
+- Installer uses staged updates with automatic rollback on failure
+- Data directories are created with mode 700
 
 ## Development
 

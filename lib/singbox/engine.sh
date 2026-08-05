@@ -103,7 +103,8 @@ engine_singbox_validate() {
 # --- engine_singbox_logs ----------------------------------------------------
 engine_singbox_logs() {
     # Stub — will tail journalctl in a future phase.
-    echo 'sing-box logs are not yet implemented.'
+    warn 'sing-box logs are not yet implemented.'
+    return 1
 }
 
 # --- engine_singbox_config_file ---------------------------------------------

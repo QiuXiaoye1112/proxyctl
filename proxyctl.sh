@@ -6,7 +6,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-readonly PROXYCTL_VERSION='0.1.0'
+readonly PROXYCTL_VERSION='0.1.1'
 
 # --- paths ----------------------------------------------------------------
 readonly PROXYCTL_BIN="${PROXYCTL_BIN:-/usr/local/sbin/proxyctl}"
@@ -31,6 +31,18 @@ elif [[ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib" ]]; then
 else
     readonly LIB_DIR="${PROXYCTL_LIB}"
 fi
+
+# --- require_runtime_dependencies -------------------------------------------
+require_runtime_dependencies() {
+    # Bash 4.0+ required for case modification, associative arrays, etc.
+    if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+        echo "proxyctl: Bash 4.0+ is required (found ${BASH_VERSION:-unknown})" >&2
+        exit 1
+    fi
+}
+
+# Run bash version check immediately — even version/help need it.
+require_runtime_dependencies
 
 # --- module loading --------------------------------------------------------
 # shellcheck source=lib/core.sh
@@ -98,8 +110,14 @@ _main() {
             menu_main
             ;;
         internal-init)
-            metadata_init
-            metadata_validate || true
+            metadata_init || {
+                echo "proxyctl: metadata_init failed" >&2
+                exit 1
+            }
+            metadata_validate || {
+                echo "proxyctl: metadata_validate failed" >&2
+                exit 1
+            }
             ;;
         *)
             echo "proxyctl: unknown command '${cmd}'"

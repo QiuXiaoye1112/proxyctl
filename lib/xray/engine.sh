@@ -104,7 +104,8 @@ engine_xray_validate() {
 # --- engine_xray_logs -------------------------------------------------------
 engine_xray_logs() {
     # Stub — will tail journalctl in a future phase.
-    echo 'Xray logs are not yet implemented.'
+    warn 'Xray logs are not yet implemented.'
+    return 1
 }
 
 # --- engine_xray_config_file ------------------------------------------------

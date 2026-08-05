@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.1] — Unreleased
+
+### Security
+- reject unsafe metadata keys via allowlist validation (`metadata_validate_key`)
+- reject transaction path traversal with strict label/ID/stage name validation
+- validate transaction IDs against known ProxyCTL format (`tx_<ts>_<rand>_<label>`)
+- harden metadata atomic writes (same-filesystem temp file, validate before mv)
+- add `transaction_validate_label`, `transaction_validate_id`, `transaction_validate_stage_name`
+- canonical path resolution for all transaction safety checks (`realpath` or `cd+pwd -P`)
+- transaction directory permissions set to 700
+
+### Fixed
+- transaction safety smoke test now checks real exit codes (not `|| true`)
+- installer lib rollback: stages lib.new, validates, swaps atomically, rolls back on failure
+- installer binary rollback: stages binary.new, validates, swaps atomically, rolls back on failure
+- installer no longer maintains a second metadata schema fallback — uses `internal-init` exclusively
+- `internal-init` validation now fails on error (removed `|| true`)
+- Bash requirement corrected from 3.2+ to 4.0+ (code uses `${value,,}`)
+- all fail-open stubs converted to fail-closed: `backup_create`, `backup_restore`, `bbr_enable`,
+  `cert_acme_issue`, `cert_generate_self`, `cert_list`, `backup_list`, `bbr_status`,
+  `engine_xray_logs`, `engine_singbox_logs`
+- data directory permissions: `/var/lib/proxyctl` 700, `/etc/proxyctl/certs` 700,
+  `/var/backups/proxyctl` 700
+- add `require_runtime_dependencies` with Bash 4.0+ check
+- add `transaction_root()` as canonical source for transaction root path
+
+### Changed
+- version: 0.1.0 → 0.1.1
+- README: corrected Bash requirement, added security section, updated phase description
+- `metadata_validate` uses `jq empty` for JSON validity check
+- `metadata_init` is the single source of truth for metadata schema
+
 ## [0.1.0] — Unreleased
 
 ### Added
