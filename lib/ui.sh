@@ -49,6 +49,13 @@ die() {
     exit "${code}"
 }
 
+# --- critical ---------------------------------------------------------------
+# Highest severity: state may require manual intervention. Always stderr.
+critical() {
+    local text="$1"
+    echo -e "${COLOR_RED}[CRITICAL]${COLOR_RESET} ${text}" >&2
+}
+
 # --- pause ------------------------------------------------------------------
 # Usage: pause [prompt]
 # Non-TTY: silent no-op.

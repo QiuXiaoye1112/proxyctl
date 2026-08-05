@@ -78,25 +78,6 @@ engine_validate_registration() {
     return "${errors}"
 }
 
-# --- apply_candidate --------------------------------------------------------
-# Usage: apply_candidate <engine> <candidate>
-# Installs a candidate configuration for the given engine.
-# Phase 1 stub — always fails closed.
-apply_candidate() {
-    local engine="$1"
-    local candidate="$2"
-
-    engine_require "${engine}"
-
-    [[ -f "${candidate}" ]] || {
-        error "Candidate does not exist: ${candidate}"
-        return 1
-    }
-
-    error 'Configuration apply is not implemented in Phase 1.'
-    return 1
-}
-
 # --- protocol helpers (delegates to capability.sh) -------------------------
 engine_protocols() {
     local engine="$1"
