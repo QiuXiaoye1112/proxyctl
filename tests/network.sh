@@ -118,11 +118,13 @@ echo ''
 # ============================================================================
 echo '--- 1. IPv4 validation ---'
 
-for ip in 0.0.0.0 1.1.1.1 127.0.0.1 192.168.1.1 255.255.255.255 01.02.03.04; do
+# Leading zeros are decimal text, including octets containing 8/9.
+for ip in 0.0.0.0 1.1.1.1 127.0.0.1 192.168.1.1 255.255.255.255 \
+          01.02.03.04 08.08.08.08 009.010.099.255 000.000.000.000; do
     assert_ok "network_validate_ipv4 '$ip'" "IPv4 accepts: ${ip}"
 done
 
-for bad in 256.0.0.1 1.2.3 1.2.3.4.5 1..3.4 abc 1.2.3.4. ''; do
+for bad in 256.0.0.1 1.2.3 1.2.3.4.5 1..3.4 abc 1.2.3.4. 0000.0.0.0 ''; do
     assert_fail "network_validate_ipv4 '$bad'" "IPv4 rejects: '${bad}'"
 done
 
@@ -240,7 +242,7 @@ assert_fail "network_public_ipv4" 'public IPv4 fails when all providers invalid'
 echo ''
 echo '--- 9. Public IPv6 fallback ---'
 
-# ipify mock returns an IPv4 string; family 6 must skip it.
+# ipify mock returns an invalid string; family 6 must skip it.
 export NET_TEST_CURL_OUT='2001:db8::1'
 assert_eq "$(network_public_ipv6)" '2001:db8::1' 'public IPv6 = 2001:db8::1'
 
