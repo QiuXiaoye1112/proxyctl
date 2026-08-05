@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # singbox/engine.sh — sing-box engine adapter
+# Phase 3 targets systemd Linux first (Debian/Ubuntu and similar distributions).
 # ------------------------------------------------------------------------------
 
 _register_engine 'singbox'
@@ -10,6 +11,14 @@ readonly _PROXYCTL_SINGBOX_INSTALLER_URL="${PROXYCTL_SINGBOX_INSTALLER_URL:-http
 _engine_singbox_require_root() {
     system_is_root && return 0
     error 'sing-box core management requires root.'
+    return 1
+}
+
+_engine_singbox_require_systemd() {
+    local init
+    init=$(system_init 2>/dev/null || true)
+    [[ "$init" == systemd ]] && return 0
+    error 'Automatic sing-box installation currently requires systemd. Alpine/OpenRC support is deferred until the systemd path is complete.'
     return 1
 }
 
@@ -72,16 +81,14 @@ JSON
 }
 
 _engine_singbox_write_service() {
-    local init bin data unit
-    init=$(system_init) || return 1
+    local bin data unit
+    _engine_singbox_require_systemd || return 1
     bin=$(command -v sing-box) || return 1
     data="${PROXYCTL_SINGBOX_DATA:-/var/lib/sing-box}"
+    unit="/etc/systemd/system/$(engine_singbox_service_name).service"
+    [[ ! -L "$unit" ]] || { error "Refusing symlink service unit: ${unit}"; return 1; }
     mkdir -p -- "$data" || return 1
-    case "$init" in
-        systemd)
-            unit="/etc/systemd/system/$(engine_singbox_service_name).service"
-            [[ ! -L "$unit" ]] || { error "Refusing symlink service unit: ${unit}"; return 1; }
-            cat >"$unit" <<EOF
+    cat >"$unit" <<EOF
 [Unit]
 Description=sing-box service managed by ProxyCTL
 Documentation=https://sing-box.sagernet.org/
@@ -89,6 +96,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# managed by ProxyCTL
 Type=simple
 User=root
 Group=root
@@ -100,60 +108,33 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
-            systemctl daemon-reload
-            ;;
-        openrc)
-            unit="/etc/init.d/$(engine_singbox_service_name)"
-            [[ ! -L "$unit" ]] || { error "Refusing symlink OpenRC service: ${unit}"; return 1; }
-            cat >"$unit" <<EOF
-#!/sbin/openrc-run
-# managed by ProxyCTL
-name="sing-box"
-description="sing-box service managed by ProxyCTL"
-command="${bin}"
-command_args="run -D ${data} -c $(engine_singbox_config_file)"
-command_background="yes"
-pidfile="/run/$(engine_singbox_service_name).pid"
-output_log="/var/log/sing-box.log"
-error_log="/var/log/sing-box.log"
-depend() { need net; }
-EOF
-            chmod 755 "$unit"
-            ;;
-        *) error 'Unsupported init system for sing-box service.'; return 1 ;;
-    esac
+    systemctl daemon-reload
 }
 
 _engine_singbox_install_impl() {
-    local version="${1:-}" pm installer config had_config=0
+    local version="${1:-}" installer config had_config=0
     _engine_singbox_require_root || return 1
+    _engine_singbox_require_systemd || return 1
+    command -v curl >/dev/null 2>&1 || { error 'curl is required to install sing-box.'; return 1; }
     config=$(engine_singbox_config_file)
     [[ -f "$config" && ! -L "$config" ]] && had_config=1
-    pm=$(system_package_manager) || return 1
-    if [[ "$pm" == apk ]]; then
-        if [[ -n "$version" ]]; then
-            warn 'Alpine package installation does not support an exact sing-box version through ProxyCTL; installing the repository package.'
-        fi
-        package_install sing-box || return 1
-    else
-        command -v curl >/dev/null 2>&1 || { error 'curl is required to install sing-box.'; return 1; }
-        installer=$(mktemp) || return 1
-        if ! curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
-            --connect-timeout 15 --max-time 180 "$_PROXYCTL_SINGBOX_INSTALLER_URL" -o "$installer"; then
-            rm -f -- "$installer"
-            return 1
-        fi
-        chmod 700 "$installer" || { rm -f -- "$installer"; return 1; }
-        if [[ -n "$version" ]]; then
-            bash "$installer" --version "${version#v}" || { rm -f -- "$installer"; return 1; }
-        else
-            bash "$installer" || { rm -f -- "$installer"; return 1; }
-        fi
+    installer=$(mktemp) || return 1
+    if ! curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+        --connect-timeout 15 --max-time 180 "$_PROXYCTL_SINGBOX_INSTALLER_URL" -o "$installer"; then
         rm -f -- "$installer"
+        return 1
     fi
+    chmod 700 "$installer" || { rm -f -- "$installer"; return 1; }
+    if [[ -n "$version" ]]; then
+        bash "$installer" --version "${version#v}" || { rm -f -- "$installer"; return 1; }
+    else
+        bash "$installer" || { rm -f -- "$installer"; return 1; }
+    fi
+    rm -f -- "$installer"
     engine_singbox_installed || { error 'sing-box installation finished but the executable was not found.'; return 1; }
     _engine_singbox_require_supported || return 1
     if (( had_config == 0 )); then
+        # Official installers/packages may ship a demo config; ProxyCTL starts empty.
         _engine_singbox_write_default_config || return 1
     fi
     _engine_singbox_write_service || return 1
@@ -172,25 +153,22 @@ engine_singbox_install() { _engine_singbox_install_impl "${1:-}"; }
 engine_singbox_update()  { _engine_singbox_install_impl "${1:-}"; }
 
 engine_singbox_uninstall() {
-    local pm init unit
+    local unit
     _engine_singbox_require_root || return 1
+    _engine_singbox_require_systemd || return 1
     engine_singbox_installed || { info 'sing-box is not installed.'; return 0; }
     engine_singbox_stop >/dev/null 2>&1 || true
     engine_singbox_disable >/dev/null 2>&1 || true
-    pm=$(system_package_manager) || return 1
+
+    # The official installer configures the package repository/package. Use the
+    # distro package API for removal; never delete shared ProxyCTL state here.
     package_remove sing-box || return 1
-    init=$(system_init 2>/dev/null || true)
-    case "$init" in
-        systemd)
-            unit="/etc/systemd/system/$(engine_singbox_service_name).service"
-            if [[ -f "$unit" ]] && grep -q 'managed by ProxyCTL' "$unit" 2>/dev/null; then rm -f -- "$unit"; fi
-            systemctl daemon-reload >/dev/null 2>&1 || true
-            ;;
-        openrc)
-            unit="/etc/init.d/$(engine_singbox_service_name)"
-            if [[ -f "$unit" ]] && grep -q 'managed by ProxyCTL' "$unit" 2>/dev/null; then rm -f -- "$unit"; fi
-            ;;
-    esac
+
+    unit="/etc/systemd/system/$(engine_singbox_service_name).service"
+    if [[ -f "$unit" ]] && grep -q 'managed by ProxyCTL' "$unit" 2>/dev/null; then
+        rm -f -- "$unit"
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
     info 'sing-box core removed. ProxyCTL configuration, certificates, metadata and backups were preserved.'
 }
 
