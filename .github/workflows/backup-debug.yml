@@ -1,0 +1,20 @@
+name: Backup Debug
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backup:
+    if: github.head_ref == 'ci/phase4-validation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bash jq openssl util-linux iproute2 net-tools curl tar
+      - name: Backup failure context
+        run: |
+          set +e
+          bash -x tests/backup.sh > /tmp/backup-trace.log 2>&1
+          rc=$?
+          grep -n -B 14 -A 22 'FAIL:' /tmp/backup-trace.log || true
+          tail -n 12 /tmp/backup-trace.log
+          exit "$rc"
