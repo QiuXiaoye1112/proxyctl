@@ -71,7 +71,8 @@ _cert_prepare_directory() {
 }
 
 make_pair() {
-    local name="$1" dir="${ROOT}/fixtures/${name}"
+    local name="$1" dir
+    dir="${ROOT}/fixtures/${name}"
     mkdir -p "$dir"
     openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
         -subj "/CN=${name}.example.com" -addext "subjectAltName=DNS:${name}.example.com" \
