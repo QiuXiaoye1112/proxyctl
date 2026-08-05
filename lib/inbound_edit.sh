@@ -3,6 +3,19 @@
 # inbound_edit.sh — shared safe edits that do not depend on engine JSON schema
 # ------------------------------------------------------------------------------
 
+# The entrypoint always loads inbound_edit.sh after inbound.sh. Load the strict
+# port-availability override here so add and edit operations share the same
+# cross-engine/OS checks without bloating the orchestration module.
+_inbound_safety_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/inbound_safety.sh"
+if [[ -r "$_inbound_safety_path" ]]; then
+    # shellcheck disable=SC1090
+    source "$_inbound_safety_path"
+else
+    error "Missing inbound safety module: ${_inbound_safety_path}"
+    return 1
+fi
+unset _inbound_safety_path
+
 _inbound_modify_listen_locked() {
     local engine="$1" tag="$2" listen="$3" port="$4" client_host="${5:-}"
     local config before meta_before candidate old_host old_port skip_os=0
