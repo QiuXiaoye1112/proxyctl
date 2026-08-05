@@ -5,7 +5,6 @@
 
 readonly META_SCHEMA_VERSION=1
 
-# Allowed top-level metadata keys (Phase 1.1 schema).
 readonly _META_ALLOWED_KEYS=(
     version
     inbounds
@@ -107,7 +106,7 @@ metadata_get() {
 _metadata_atomic_jq() {
     local tmp
     _metadata_require_jq || return 1
-    metadata_init || return 1
+    metadata_init >/dev/null || return 1
     metadata_validate || return 1
 
     tmp=$(mktemp "${PROXYCTL_META}.tmp.XXXXXX") || {
@@ -160,7 +159,7 @@ metadata_keys() {
 # identifier (object key) is independent from Certbot's lineage/certName.
 metadata_cert_exists() {
     local identifier="${1:-}"
-    metadata_init || return 1
+    metadata_init >/dev/null || return 1
     _metadata_require_jq || return 1
     jq -e --arg id "$identifier" '.certificates[$id] != null' "$PROXYCTL_META" >/dev/null 2>&1
 }
@@ -197,20 +196,25 @@ metadata_cert_get_field() {
         subject|certName|source|validation|autoRenew|updatedAt) ;;
         *) error "Invalid certificate metadata field: ${field}"; return 1 ;;
     esac
-    metadata_init || return 1
+    metadata_init >/dev/null || return 1
     _metadata_require_jq || return 1
-    jq -r --arg id "$identifier" --arg field "$field" \
-        '.certificates[$id][$field] // empty' "$PROXYCTL_META"
+    jq -r --arg id "$identifier" --arg field "$field" '
+        if (.certificates[$id] != null and (.certificates[$id] | has($field))) then
+            .certificates[$id][$field]
+        else
+            empty
+        end
+    ' "$PROXYCTL_META"
 }
 
 metadata_cert_list() {
-    metadata_init || return 1
+    metadata_init >/dev/null || return 1
     _metadata_require_jq || return 1
     jq -r '.certificates | keys[]' "$PROXYCTL_META" 2>/dev/null
 }
 
 metadata_cert_auto_renew_list() {
-    metadata_init || return 1
+    metadata_init >/dev/null || return 1
     _metadata_require_jq || return 1
     jq -r '.certificates | to_entries[] | select(.value.autoRenew == true) | .key' \
         "$PROXYCTL_META" 2>/dev/null
