@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.2.5] — Unreleased
+
+### Added
+
+- shared certificate manager in `lib/common/certificate.sh`, ported from the
+  mature xrayctl certificate lifecycle and adapted for both Xray and sing-box
+- isolated Certbot environment under `/opt/proxyctl/certbot` with dedicated
+  config/work/log state under ProxyCTL paths; system `/etc/letsencrypt` is not
+  used
+- ACME issuance for domains via Cloudflare DNS, HTTP standalone, nginx, or
+  manual DNS, plus Certbot short-lived IP certificates
+- port-80 ownership handling for `free` / Xray / sing-box / nginx / Apache /
+  unknown processes; only managed Xray/sing-box services may be stopped and
+  restored automatically, while unknown owners are never killed
+- shared managed certificate layout:
+  `/etc/proxyctl/certs/<identifier>/fullchain.pem` + `privkey.pem`
+- staged certificate-pair synchronization inherited from xrayctl: compare,
+  stage, OpenSSL pair validation, old-pair backup, two-file replacement, and
+  rollback when replacement fails
+- certificate metadata helpers preserving the distinction between ProxyCTL
+  `identifier` and Certbot lineage `certName`
+- certificate source/validation/auto-renew metadata, list/info/path APIs,
+  import, self-signed generation, safe deletion, single-certificate renewal,
+  and bulk auto-renewal
+- renewal result states `renewed` / `unchanged` / `blocked` / `failed`, with
+  blocked renewal for missing Cloudflare credentials, manual DNS, unsupported
+  port-80 ownership, or non-systemd engine pre/post hooks
+- systemd `proxyctl-certbot-renew.timer` + service, running
+  `proxyctl cert renew-auto` twice daily with randomized delay
+- `proxyctl-cert` supplementary group and systemd engine drop-ins so Xray and
+  sing-box can share non-world-readable managed private keys
+- engine-neutral consumer detection: an updated certificate restarts only
+  active engines whose real config references that managed certificate path
+- `proxyctl cert` CLI: list/info/paths/issue/self/import/renew/renew-auto/delete
+  and interactive Cloudflare credential configuration
+- `tests/certificate.sh`: local OpenSSL fixtures, pair mismatch/rollback safety,
+  symlink protection, metadata `certName`, credential permission/umask checks,
+  port-80 ownership, Xray/sing-box stop/restore, isolated Certbot args, shared
+  dual-engine consumer restart, delete protection, and real cert-lock contention
+
+### Security
+
+- certificate identifiers reject path traversal and path separators
+- managed certificate roots/directories/files reject symlink targets before
+  replacement or deletion
+- certificate/private-key public keys must match before installation
+- Cloudflare credentials are atomically written mode 600 without changing the
+  caller's process umask
+- Certbot state is fully isolated from system Certbot state
+- private keys are mode 640 and restricted to root + `proxyctl-cert`; installed
+  systemd engine services receive that supplementary group
+
+### Changed
+
+- version: 0.2.4 → 0.2.5
+- certificate management moved from Planned to Implemented
+- Phase 2.6 follows xrayctl's existing certificate behavior instead of creating
+  a second independent design
+
 ## [0.2.4] — Unreleased
 
 ### Added
