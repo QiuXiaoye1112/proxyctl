@@ -3,7 +3,16 @@
 # xray/inbound.sh — Xray-specific inbound JSON, users, and share links
 # ------------------------------------------------------------------------------
 
-_xray_spec_protocol() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+_xray_spec_protocol() {
+    case "${1^^}" in
+        VLESS) printf '%s' vless ;;
+        VMESS) printf '%s' vmess ;;
+        TROJAN) printf '%s' trojan ;;
+        SOCKS|SOCKS5) printf '%s' socks ;;
+        HTTP) printf '%s' http ;;
+        *) printf '%s' "$1" | tr '[:upper:]' '[:lower:]' ;;
+    esac
+}
 _xray_uri_encode() { jq -rn --arg v "$1" '$v|@uri'; }
 _xray_uri_host() { [[ "$1" == *:* ]] && printf '[%s]' "$1" || printf '%s' "$1"; }
 _xray_base64() { if base64 --help 2>/dev/null | grep -q -- '-w'; then base64 -w0; else openssl base64 -A; fi; }
@@ -28,7 +37,7 @@ _xray_collect_certificate_spec() {
 }
 
 engine_xray_inbound_collect_spec() {
-    local protocol transport='' security='' tag listen port client_host name username password uuid
+    local protocol transport='' security='' tag listen port client_host name='' username='' password='' uuid=''
     local path='' cert_id='' sni='' target='' private='' public='' short_id='' pair default_host
     choose protocol 'Select Xray protocol:' VLESS VMess Trojan SOCKS5 HTTP || return 1
     prompt_value tag 'Inbound tag' "${protocol,,}-$(inbound_random_hex 2)" || return 1
@@ -42,15 +51,9 @@ engine_xray_inbound_collect_spec() {
     network_validate_host "$client_host" || { error 'Client address must be an IP or domain.'; return 1; }
 
     case "$protocol" in
-        VLESS)
-            choose security 'Transport security:' reality tls none || return 1
-            ;;
-        VMess)
-            choose security 'Transport security:' tls none || return 1
-            ;;
-        Trojan)
-            choose security 'Transport security:' tls reality none || return 1
-            ;;
+        VLESS) choose security 'Transport security:' reality tls none || return 1 ;;
+        VMess) choose security 'Transport security:' tls none || return 1 ;;
+        Trojan) choose security 'Transport security:' tls reality none || return 1 ;;
     esac
 
     case "$protocol" in
@@ -104,13 +107,9 @@ engine_xray_inbound_collect_spec() {
         --arg host "$client_host" --arg transport "$transport" --arg security "$security" --arg path "$path" \
         --arg cert "$cert_id" --arg sni "$sni" --arg target "$target" --arg private "$private" --arg public "$public" --arg sid "$short_id" \
         --arg name "$name" --arg username "$username" --arg password "$password" --arg uuid "$uuid" '
-        {
-          protocol:$protocol,tag:$tag,listen:$listen,port:$port,client_host:$host,
-          transport:$transport,security:$security,path:$path,
-          tls:{cert_id:$cert,server_name:$sni},
-          reality:{target:$target,server_name:$sni,private_key:$private,public_key:$public,short_id:$sid},
-          user:{name:$name,username:$username,password:$password,uuid:$uuid}
-        }'
+        {protocol:$protocol,tag:$tag,listen:$listen,port:$port,client_host:$host,transport:$transport,security:$security,path:$path,
+         tls:{cert_id:$cert,server_name:$sni},reality:{target:$target,server_name:$sni,private_key:$private,public_key:$public,short_id:$sid},
+         user:{name:$name,username:$username,password:$password,uuid:$uuid}}'
 }
 
 engine_xray_inbound_build_from_spec() {
@@ -137,12 +136,8 @@ engine_xray_inbound_build_from_spec() {
         stream=$(jq -n --arg method "$method" --arg security "$security" '{method:$method,security:$security}')
         case "$method" in
             raw) stream=$(jq '. + {rawSettings:{acceptProxyProtocol:false,header:{type:"none"}}}' <<<"$stream") ;;
-            xhttp)
-                inbound_validate_path "$path" || { error 'Invalid XHTTP path.'; return 1; }
-                stream=$(jq --arg path "$path" '. + {xhttpSettings:{path:$path,mode:"auto"}}' <<<"$stream") ;;
-            websocket)
-                inbound_validate_path "$path" || { error 'Invalid WebSocket path.'; return 1; }
-                stream=$(jq --arg path "$path" '. + {wsSettings:{path:$path,acceptProxyProtocol:false}}' <<<"$stream") ;;
+            xhttp) inbound_validate_path "$path" || { error 'Invalid XHTTP path.'; return 1; }; stream=$(jq --arg path "$path" '. + {xhttpSettings:{path:$path,mode:"auto"}}' <<<"$stream") ;;
+            websocket) inbound_validate_path "$path" || { error 'Invalid WebSocket path.'; return 1; }; stream=$(jq --arg path "$path" '. + {wsSettings:{path:$path,acceptProxyProtocol:false}}' <<<"$stream") ;;
         esac
         case "$security" in
             none) ;;
@@ -222,11 +217,18 @@ engine_xray_inbound_clients() {
     esac
 }
 
+_xray_client_exists() {
+    local tag="$1" label="$2" found
+    while IFS=$'\t' read -r found _; do [[ "$found" == "$label" ]] && return 0; done < <(engine_xray_inbound_clients "$tag")
+    return 1
+}
+
 engine_xray_inbound_client_add() {
     local tag="$1" label="${2:-}" credential="${3:-}" config protocol candidate user method security flow=''
     inbound_exists xray "$tag" || { error "Inbound not found: ${tag}"; return 1; }
     config=$(engine_xray_config_file); protocol=$(_xray_client_protocol "$config" "$tag")
     [[ -n "$label" ]] || prompt_value label 'User name' "user-$(inbound_random_hex 2)" || return 1
+    _xray_client_exists "$tag" "$label" && { error "User already exists: ${label}"; return 1; }
     case "$protocol" in
         vless)
             [[ -n "$credential" ]] || credential=$(inbound_generate_uuid)
@@ -251,6 +253,7 @@ engine_xray_inbound_client_add() {
 engine_xray_inbound_client_rotate() {
     local tag="$1" label="$2" credential="${3:-}" config protocol candidate
     inbound_exists xray "$tag" || return 1
+    _xray_client_exists "$tag" "$label" || { error "User not found: ${label}"; return 1; }
     config=$(engine_xray_config_file); protocol=$(_xray_client_protocol "$config" "$tag")
     candidate=$(mktemp) || return 1
     case "$protocol" in
@@ -265,6 +268,7 @@ engine_xray_inbound_client_rotate() {
 engine_xray_inbound_client_delete() {
     local tag="$1" label="$2" config protocol candidate count listen
     inbound_exists xray "$tag" || return 1
+    _xray_client_exists "$tag" "$label" || { error "User not found: ${label}"; return 1; }
     config=$(engine_xray_config_file); protocol=$(_xray_client_protocol "$config" "$tag")
     if [[ "$protocol" == http ]]; then
         count=$(jq --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.settings.accounts // .settings.users // [])|length' "$config")
@@ -281,7 +285,7 @@ engine_xray_inbound_client_delete() {
 }
 
 engine_xray_inbound_share() {
-    local tag="$1" wanted="${2:-}" config protocol host uri_host port method security type path sni sid pbk flow label credential query vmess_json
+    local tag="$1" wanted="${2:-}" config protocol host uri_host port method security type path sni sid pbk flow label credential query vmess_json count scheme
     inbound_exists xray "$tag" || return 1
     config=$(engine_xray_config_file); protocol=$(_xray_client_protocol "$config" "$tag")
     host=$(inbound_meta_get xray "$tag" clientHost); [[ -n "$host" ]] || host=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen' "$config")
@@ -302,8 +306,11 @@ engine_xray_inbound_share() {
             while IFS=$'\t' read -r label credential; do
                 [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
                 flow=''; [[ "$protocol" != vless ]] || flow=$(jq -r --arg tag "$tag" --arg label "$label" '.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$label)|.flow // empty' "$config")
-                [[ -z "$flow" ]] || printf 'vless://%s@%s:%s?%s&flow=%s#%s\n' "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "$flow")" "$(_xray_uri_encode "${tag}-${label}")"
-                if [[ -z "$flow" ]]; then printf '%s://%s@%s:%s?%s#%s\n' "$protocol" "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "${tag}-${label}")"; fi
+                if [[ -n "$flow" ]]; then
+                    printf 'vless://%s@%s:%s?%s&flow=%s#%s\n' "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "$flow")" "$(_xray_uri_encode "${tag}-${label}")"
+                else
+                    printf '%s://%s@%s:%s?%s#%s\n' "$protocol" "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "${tag}-${label}")"
+                fi
             done < <(engine_xray_inbound_clients "$tag")
             ;;
         vmess)
@@ -315,10 +322,16 @@ engine_xray_inbound_share() {
             done < <(engine_xray_inbound_clients "$tag")
             ;;
         socks|http)
-            while IFS=$'\t' read -r label credential; do
-                [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
-                printf '%s://%s:%s@%s:%s\n' "$([[ "$protocol" == socks ]] && echo socks5 || echo http)" "$(_xray_uri_encode "$label")" "$(_xray_uri_encode "$credential")" "$uri_host" "$port"
-            done < <(engine_xray_inbound_clients "$tag")
+            count=$(jq --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.settings.accounts // .settings.users // [])|length' "$config")
+            scheme=$([[ "$protocol" == socks ]] && printf socks5 || printf http)
+            if (( count == 0 )); then
+                printf '%s://%s:%s\n' "$scheme" "$uri_host" "$port"
+            else
+                while IFS=$'\t' read -r label credential; do
+                    [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
+                    printf '%s://%s:%s@%s:%s\n' "$scheme" "$(_xray_uri_encode "$label")" "$(_xray_uri_encode "$credential")" "$uri_host" "$port"
+                done < <(engine_xray_inbound_clients "$tag")
+            fi
             ;;
     esac
 }
