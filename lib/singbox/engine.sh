@@ -74,16 +74,22 @@ engine_singbox_is_active() {
 }
 
 # --- engine_singbox_validate ------------------------------------------------
+# Usage: engine_singbox_validate <file>
+# Real core validation: `sing-box check -c FILE`. Fail closed on core missing,
+# file missing, or a non-zero check.
 engine_singbox_validate() {
     local config_file="${1:-${SINGBOX_CONFIG}}"
-    # Stub — will run `sing-box check` in a future phase.
-    # Fail closed: unimplemented validation must not report success.
+
+    if ! engine_singbox_installed; then
+        error 'sing-box is not installed.'
+        return 1
+    fi
     if [[ ! -f "${config_file}" ]]; then
         error "Config file not found: ${config_file}"
         return 1
     fi
-    error 'sing-box config validation is not implemented.'
-    return 1
+
+    sing-box check -c "${config_file}"
 }
 
 # --- engine_singbox_logs ----------------------------------------------------

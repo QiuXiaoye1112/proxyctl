@@ -75,16 +75,23 @@ engine_xray_is_active() {
 }
 
 # --- engine_xray_validate ---------------------------------------------------
+# Usage: engine_xray_validate <file>
+# Real core validation: `xray run -test -config FILE`. A file that is merely
+# valid JSON is NOT valid Xray config — only the core decides.
+# Fail closed: core missing, file missing, or core returning non-zero all fail.
 engine_xray_validate() {
     local config_file="${1:-${XRAY_CONFIG}}"
-    # Stub — will run `xray -test` in a future phase.
-    # Fail closed: unimplemented validation must not report success.
+
+    if ! engine_xray_installed; then
+        error 'Xray is not installed.'
+        return 1
+    fi
     if [[ ! -f "${config_file}" ]]; then
         error "Config file not found: ${config_file}"
         return 1
     fi
-    error 'Xray config validation is not implemented.'
-    return 1
+
+    xray run -test -config "${config_file}"
 }
 
 # --- engine_xray_logs -------------------------------------------------------
