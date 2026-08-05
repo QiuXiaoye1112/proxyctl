@@ -85,6 +85,41 @@ jobs:
       - name: Self-uninstall safety
         run: bash tests/uninstall.sh
 
+  portability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Debian 13 smoke
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work debian:13-slim bash -lc '
+            apt-get update >/dev/null &&
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep >/dev/null &&
+            bash tests/smoke.sh &&
+            bash tests/system.sh &&
+            bash tests/service.sh &&
+            bash tests/engine_lifecycle.sh &&
+            bash tests/outbounds.sh &&
+            bash tests/reconcile.sh &&
+            bash tests/uninstall.sh
+          '
+
+      - name: Alpine 3.23 / OpenRC smoke
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work alpine:3.23 sh -lc '
+            apk add --no-cache bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep openrc >/dev/null &&
+            bash tests/smoke.sh &&
+            bash tests/system.sh &&
+            bash tests/service.sh &&
+            bash tests/engine_lifecycle.sh &&
+            bash tests/outbounds.sh &&
+            bash tests/reconcile.sh &&
+            bash tests/uninstall.sh
+          '
+
   real-protocols:
     runs-on: ubuntu-latest
     timeout-minutes: 20
