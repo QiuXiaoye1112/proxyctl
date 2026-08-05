@@ -1,0 +1,59 @@
+name: ProxyCTL CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bash jq openssl util-linux iproute2 net-tools curl python3 tar
+
+      - name: Bash syntax
+        run: |
+          find . -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      - name: Core smoke
+        run: bash tests/smoke.sh
+
+      - name: System abstraction
+        run: bash tests/system.sh
+
+      - name: Service abstraction
+        run: bash tests/service.sh
+
+      - name: Network utilities
+        run: bash tests/network.sh
+
+      - name: Port utilities
+        run: bash tests/port.sh
+
+      - name: Locking
+        run: bash tests/lock.sh
+
+      - name: Lock security
+        run: bash tests/lock_security.sh
+
+      - name: Config transactions
+        run: bash tests/transaction.sh
+
+      - name: Certificates
+        run: bash tests/certificate.sh
+
+      - name: Portable backup
+        run: bash tests/backup.sh
+
+      - name: Phase 2 integration
+        run: bash tests/integration.sh
