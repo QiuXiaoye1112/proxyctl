@@ -31,6 +31,9 @@ jobs:
       - name: UI propagation
         run: bash tests/ui.sh
 
+      - name: Interactive menu E2E
+        run: bash tests/menu.sh
+
       - name: Installer transaction
         run: sudo bash tests/installer.sh
 
@@ -103,6 +106,7 @@ jobs:
               bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep >/dev/null &&
             bash tests/smoke.sh &&
             bash tests/ui.sh &&
+            bash tests/menu.sh &&
             bash tests/system.sh &&
             bash tests/service.sh &&
             bash tests/engine_lifecycle.sh &&
@@ -117,6 +121,7 @@ jobs:
             apk add --no-cache bash jq openssl util-linux iproute2 net-tools curl tar coreutils findutils grep openrc >/dev/null &&
             bash tests/smoke.sh &&
             bash tests/ui.sh &&
+            bash tests/menu.sh &&
             bash tests/system.sh &&
             bash tests/service.sh &&
             bash tests/engine_lifecycle.sh &&
