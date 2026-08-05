@@ -16,6 +16,8 @@ readonly PROXYCTL_META="${PROXYCTL_DATA}/meta.json"
 readonly PROXYCTL_CERTS="${PROXYCTL_CERTS:-/etc/proxyctl/certs}"
 readonly PROXYCTL_BACKUP="${PROXYCTL_BACKUP:-/var/backups/proxyctl}"
 readonly PROXYCTL_LOCK="${PROXYCTL_LOCK:-/run/lock/proxyctl.lock}"
+readonly PROXYCTL_CERT_LOCK="${PROXYCTL_CERT_LOCK:-/run/lock/proxyctl-cert.lock}"
+readonly PROXYCTL_FIREWALL_LOCK="${PROXYCTL_FIREWALL_LOCK:-/run/lock/proxyctl-firewall.lock}"
 
 readonly XRAY_CONFIG='/usr/local/etc/xray/config.json'
 readonly SINGBOX_CONFIG='/etc/sing-box/config.json'
