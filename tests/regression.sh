@@ -24,11 +24,7 @@ run_case() {
     fi
 }
 
-run_shell_test() {
-    local path="$1"
-    bash "$path"
-}
-
+run_shell_test() { bash "$1"; }
 run_installer_test() {
     if (( EUID == 0 )); then
         bash tests/installer.sh
@@ -44,6 +40,7 @@ run_case 'Bash declaration scope audit' python3 tests/bash_scope_audit.py
 run_case 'Bash syntax' bash -c "find . -name '*.sh' -print0 | xargs -0 -n1 bash -n"
 run_case 'Core smoke' run_shell_test tests/smoke.sh
 run_case 'UI propagation' run_shell_test tests/ui.sh
+run_case 'Real interactive spec collectors' run_shell_test tests/interactive_specs.sh
 run_case 'Interactive menu E2E' run_shell_test tests/menu.sh
 run_case 'Installer transaction / piped bootstrap' run_installer_test
 run_case 'System abstraction' run_shell_test tests/system.sh
