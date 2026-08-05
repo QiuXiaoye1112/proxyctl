@@ -27,9 +27,7 @@ inbound_random_hex() {
     fi
 }
 
-inbound_random_password() {
-    inbound_random_hex 16
-}
+inbound_random_password() { inbound_random_hex 16; }
 
 inbound_generate_uuid() {
     if [[ -r /proc/sys/kernel/random/uuid ]]; then
@@ -37,20 +35,17 @@ inbound_generate_uuid() {
     elif command -v uuidgen >/dev/null 2>&1; then
         uuidgen | tr '[:upper:]' '[:lower:]'
     elif command -v openssl >/dev/null 2>&1; then
-        local h
+        local h variant
         h=$(openssl rand -hex 16) || return 1
-        printf '%s-%s-4%s-%s%s-%s\n' "${h:0:8}" "${h:8:4}" "${h:13:3}" \
-            "$(( (0x${h:16:1} & 3) | 8 ))" "${h:17:3}" "${h:20:12}"
+        printf -v variant '%x' "$(( (0x${h:16:1} & 3) | 8 ))"
+        printf '%s-%s-4%s-%s%s-%s\n' "${h:0:8}" "${h:8:4}" "${h:13:3}" "$variant" "${h:17:3}" "${h:20:12}"
     else
         error 'Unable to generate UUID.'
         return 1
     fi
 }
 
-inbound_engine_function() {
-    local engine="$1" method="$2"
-    printf 'engine_%s_inbound_%s\n' "$engine" "$method"
-}
+inbound_engine_function() { printf 'engine_%s_inbound_%s\n' "$1" "$2"; }
 
 inbound_call() {
     local engine="$1" method="$2" func
@@ -59,6 +54,14 @@ inbound_call() {
     func=$(inbound_engine_function "$engine" "$method")
     declare -F "$func" >/dev/null 2>&1 || { error "Inbound operation '${method}' is not implemented for ${engine}."; return 1; }
     "$func" "$@"
+}
+
+inbound_post_change() {
+    local engine="$1" action="$2" func
+    shift 2 || true
+    func=$(inbound_engine_function "$engine" post_change)
+    declare -F "$func" >/dev/null 2>&1 || return 0
+    "$func" "$action" "$@"
 }
 
 inbound_config_file() {
@@ -103,44 +106,31 @@ inbound_port_in_config() {
 inbound_meta_set() {
     local engine="$1" tag="$2" client_host="${3:-}" reality_public="${4:-}" hop_range="${5:-}"
     inbound_validate_tag "$tag" || return 1
-    _metadata_atomic_jq \
-        --arg engine "$engine" --arg tag "$tag" --arg host "$client_host" \
-        --arg public "$reality_public" --arg hop "$hop_range" \
-        --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
+    _metadata_atomic_jq --arg engine "$engine" --arg tag "$tag" --arg host "$client_host" \
+        --arg public "$reality_public" --arg hop "$hop_range" --arg now "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
         .inbounds[$engine] = (.inbounds[$engine] // {}) |
-        .inbounds[$engine][$tag] = {
-            clientHost:$host,
-            realityPublicKey:$public,
-            hy2HopRange:$hop,
-            updatedAt:$now
-        }'
+        .inbounds[$engine][$tag] = {clientHost:$host,realityPublicKey:$public,hy2HopRange:$hop,updatedAt:$now}'
 }
 
 inbound_meta_get() {
     local engine="$1" tag="$2" field="$3"
     case "$field" in clientHost|realityPublicKey|hy2HopRange|updatedAt) ;; *) return 1 ;; esac
     metadata_init >/dev/null || return 1
-    jq -r --arg engine "$engine" --arg tag "$tag" --arg field "$field" \
-        '.inbounds[$engine][$tag][$field] // empty' "$PROXYCTL_META"
+    jq -r --arg engine "$engine" --arg tag "$tag" --arg field "$field" '.inbounds[$engine][$tag][$field] // empty' "$PROXYCTL_META"
 }
 
 inbound_meta_delete() {
     local engine="$1" tag="$2"
-    _metadata_atomic_jq --arg engine "$engine" --arg tag "$tag" '
-        del(.inbounds[$engine][$tag]) |
-        if ((.inbounds[$engine] // {})|length)==0 then del(.inbounds[$engine]) else . end'
+    _metadata_atomic_jq --arg engine "$engine" --arg tag "$tag" 'del(.inbounds[$engine][$tag]) | if ((.inbounds[$engine] // {})|length)==0 then del(.inbounds[$engine]) else . end'
 }
 
 inbound_meta_rename() {
     local engine="$1" old="$2" new="$3"
-    _metadata_atomic_jq --arg engine "$engine" --arg old "$old" --arg new "$new" '
-        if .inbounds[$engine][$old] != null then
-            .inbounds[$engine][$new]=.inbounds[$engine][$old] | del(.inbounds[$engine][$old])
-        else . end'
+    _metadata_atomic_jq --arg engine "$engine" --arg old "$old" --arg new "$new" 'if .inbounds[$engine][$old] != null then .inbounds[$engine][$new]=.inbounds[$engine][$old] | del(.inbounds[$engine][$old]) else . end'
 }
 
 inbound_add_from_spec() {
-    local engine="$1" spec="$2" config candidate inbound tag port host public hop
+    local engine="$1" spec="$2" config candidate inbound tag port host public hop rollback
     engine_exists "$engine" || { error "Unknown engine: ${engine}"; return 1; }
     engine_call "$engine" installed >/dev/null 2>&1 || { error "${engine} is not installed."; return 1; }
     inbound_config_require "$engine" || return 1
@@ -155,20 +145,31 @@ inbound_add_from_spec() {
     inbound=$(inbound_call "$engine" build_from_spec "$spec") || return 1
     config=$(inbound_config_file "$engine")
     candidate=$(mktemp) || return 1
-    if ! jq --argjson inbound "$inbound" '.inbounds += [$inbound]' "$config" >"$candidate"; then
-        rm -f -- "$candidate"
-        return 1
-    fi
-    if ! apply_candidate "$engine" "$candidate"; then
-        rm -f -- "$candidate"
-        return 1
-    fi
+    jq --argjson inbound "$inbound" '.inbounds += [$inbound]' "$config" >"$candidate" || { rm -f -- "$candidate"; return 1; }
+    if ! apply_candidate "$engine" "$candidate"; then rm -f -- "$candidate"; return 1; fi
     rm -f -- "$candidate"
 
     host=$(jq -r '.client_host // empty' <<<"$spec")
     public=$(jq -r '.reality.public_key // empty' <<<"$spec")
     hop=$(jq -r '.hysteria2.hop_range // empty' <<<"$spec")
-    inbound_meta_set "$engine" "$tag" "$host" "$public" "$hop" || warn "Inbound ${tag} was created but metadata could not be updated."
+    if ! inbound_meta_set "$engine" "$tag" "$host" "$public" "$hop"; then
+        warn "Inbound ${tag} was created but metadata could not be updated."
+    fi
+    if ! inbound_post_change "$engine" add "$tag"; then
+        error "Post-create setup failed for ${engine}/${tag}; rolling back the new inbound."
+        config=$(inbound_config_file "$engine")
+        rollback=$(mktemp) || { critical "Unable to create rollback candidate for ${engine}/${tag}."; return 1; }
+        jq --arg tag "$tag" '.inbounds |= map(select(.tag!=$tag))' "$config" >"$rollback" || { rm -f -- "$rollback"; return 1; }
+        if ! apply_candidate "$engine" "$rollback"; then
+            rm -f -- "$rollback"
+            critical "Failed to roll back inbound ${engine}/${tag} after post-create failure."
+            return 1
+        fi
+        rm -f -- "$rollback"
+        inbound_meta_delete "$engine" "$tag" >/dev/null 2>&1 || true
+        inbound_post_change "$engine" rollback-add "$tag" >/dev/null 2>&1 || true
+        return 1
+    fi
     info "Inbound created: ${engine}/${tag}"
 }
 
@@ -179,11 +180,7 @@ inbound_add_interactive() {
     inbound_add_from_spec "$engine" "$spec"
 }
 
-inbound_list() {
-    local engine="$1"
-    inbound_config_require "$engine" || return 1
-    inbound_call "$engine" list
-}
+inbound_list() { local engine="$1"; inbound_config_require "$engine" || return 1; inbound_call "$engine" list; }
 
 inbound_show() {
     local engine="$1" tag="$2" config
@@ -203,6 +200,7 @@ inbound_rename() {
     if apply_candidate "$engine" "$candidate"; then
         inbound_meta_rename "$engine" "$old" "$new" || warn 'Config renamed but metadata rename failed.'
         rm -f -- "$candidate"
+        if ! inbound_post_change "$engine" rename "$new" "$old"; then critical "Inbound renamed, but dependent runtime state could not be synchronized."; return 1; fi
         info "Inbound renamed: ${old} -> ${new}"
         return 0
     fi
@@ -219,6 +217,7 @@ inbound_delete() {
     if apply_candidate "$engine" "$candidate"; then
         inbound_meta_delete "$engine" "$tag" || warn 'Config deleted but metadata cleanup failed.'
         rm -f -- "$candidate"
+        if ! inbound_post_change "$engine" delete "$tag"; then critical "Inbound deleted, but dependent runtime state could not be synchronized."; return 1; fi
         info "Inbound deleted: ${engine}/${tag}"
         return 0
     fi
