@@ -10,7 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            bash jq openssl util-linux iproute2 net-tools curl python3 tar
+            bash jq openssl util-linux iproute2 net-tools curl python3 tar unzip
 
       - name: Bash syntax
         run: |
@@ -57,3 +57,38 @@ jobs:
 
       - name: Phase 2 integration
         run: bash tests/integration.sh
+
+      - name: Core lifecycle adapters
+        run: bash tests/engine_lifecycle.sh
+
+      - name: Inbound and user lifecycle
+        run: bash tests/inbounds.sh
+
+  real-protocols:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bash jq openssl curl unzip ca-certificates
+
+      - name: Install Xray 26.7.11
+        run: |
+          curl -fsSL --retry 3 https://github.com/XTLS/Xray-install/raw/main/install-release.sh -o /tmp/xray-install.sh
+          sudo bash /tmp/xray-install.sh install --version 26.7.11
+          sudo systemctl stop xray.service || true
+          xray version
+
+      - name: Install sing-box 1.13.12
+        run: |
+          curl -fsSL --retry 3 https://sing-box.app/install.sh -o /tmp/sing-box-install.sh
+          sudo bash /tmp/sing-box-install.sh --version 1.13.12
+          sudo systemctl stop sing-box.service || true
+          sing-box version
+
+      - name: Validate every Phase 3 protocol with real cores
+        run: bash tests/protocols_real.sh
