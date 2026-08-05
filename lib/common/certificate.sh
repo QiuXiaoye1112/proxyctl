@@ -389,9 +389,12 @@ _cert_issue_domain_cloudflare() {
     certbot_cmd "${args[@]}"
 }
 
+# Optional fourth argument is a previously detected port-80 owner. The caller
+# passes it when recording validation metadata so the branch used for issuance
+# and the stored validation mode are based on the same observation.
 _cert_issue_domain_http() {
-    local domain="$1" email="$2" force="$3" owner args
-    owner=$(cert_detect_port80_owner)
+    local domain="$1" email="$2" force="$3" owner="${4:-}" args
+    [[ -n "$owner" ]] || owner=$(cert_detect_port80_owner)
     args=(certonly --standalone --non-interactive --agree-tos --preferred-challenges http --cert-name "$domain" -m "$email" -d "$domain")
     (( force == 0 )) || args+=(--force-renewal)
     case "$owner" in
@@ -473,7 +476,7 @@ EOF
 
 _cert_acme_issue_locked() {
     local subject="$1" email="$2" method="${3:-http}" force="${4:-0}"
-    local identifier cert_name validation auto_renew=true changed=0
+    local identifier cert_name validation owner auto_renew=true changed=0
     _cert_require_root || return 1
     cert_validate_subject "$subject" || { error "Invalid certificate subject: ${subject}"; return 1; }
     cert_validate_email "$email" || { error "Invalid certificate email: ${email}"; return 1; }
@@ -497,9 +500,9 @@ _cert_acme_issue_locked() {
             _cert_issue_domain_cloudflare "$cert_name" "$email" "$force" || return 1
             ;;
         http)
-            validation=http-standalone
-            [[ "$(cert_detect_port80_owner)" != nginx ]] || validation=http-nginx
-            _cert_issue_domain_http "$cert_name" "$email" "$force" || return 1
+            owner=$(cert_detect_port80_owner)
+            if [[ "$owner" == nginx ]]; then validation=http-nginx; else validation=http-standalone; fi
+            _cert_issue_domain_http "$cert_name" "$email" "$force" "$owner" || return 1
             ;;
         dns-manual)
             network_validate_ip "$subject" 2>/dev/null && { error 'Manual DNS validation is for domain certificates only.'; return 1; }
