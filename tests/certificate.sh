@@ -124,10 +124,13 @@ ln -s "$SENSITIVE" "${PROXYCTL_CERTS}/symlink-test/fullchain.pem"
 bad _cert_replace_pair symlink-test "$CERT_A" "$KEY_A" changed
 eqv "$(cat "$SENSITIVE")" 'do-not-touch' 'symlink target remains untouched'
 
-# 6. Certificate metadata keeps identifier distinct from Certbot certName.
+# 6. Certificate metadata keeps identifier distinct from Certbot certName and
+# preserves false instead of treating it as a missing jq value.
 ok metadata_cert_set 'example.com' 'example.com' 'example.com-0002' letsencrypt http-standalone true
 eqv "$(metadata_cert_get_field example.com certName)" 'example.com-0002' 'metadata preserves distinct certName'
-eqv "$(metadata_cert_get_field example.com autoRenew)" 'true' 'metadata stores autoRenew boolean'
+eqv "$(metadata_cert_get_field example.com autoRenew)" 'true' 'metadata stores autoRenew=true'
+ok metadata_cert_set 'manual.example.com' 'manual.example.com' 'manual.example.com' letsencrypt dns-manual false
+eqv "$(metadata_cert_get_field manual.example.com autoRenew)" 'false' 'metadata preserves autoRenew=false'
 has "$(metadata_cert_list)" 'example.com' 'certificate appears in metadata list'
 
 # 7. Cloudflare credentials are atomic/private and do not leak umask changes.
@@ -184,7 +187,6 @@ EOF
 chmod +x "${PROXYCTL_CERTBOT_VENV}/bin/certbot"
 export CERTBOT_TEST_LOG="$CERTBOT_LOG"
 unset -f certbot_cmd
-# shellcheck disable=SC1090
 source "${PROJECT_DIR}/lib/common/certificate.sh"
 certbot_cmd certificates
 argv=$(cat "$CERTBOT_LOG")
@@ -221,8 +223,28 @@ ok metadata_cert_set example.com example.com example.com imported imported false
 bad _cert_delete_locked example.com
 ok metadata_cert_exists example.com
 
-# 13. Real cert-lock contention blocks mutating certificate operations.
-# Use credential save: lock acquisition happens before the mocked root-sensitive body.
+# 13. ACME HTTP metadata and issuance consume one owner observation. A mocked
+# owner sequence would expose the old double-detection bug; the issue helper
+# must receive the exact owner selected by _cert_acme_issue_locked.
+OWNER_LOG="${ROOT}/owner-log"
+META_LOG="${ROOT}/meta-log"
+cert_exists() { return 1; }
+cert_ensure_certbot_environment() { return 0; }
+cert_detect_port80_owner() { printf '%s\n' nginx; }
+_cert_issue_domain_http() { printf '%s\n' "${4:-missing}" >"$OWNER_LOG"; return 0; }
+_cert_sync_lineage() { [[ -z "${3:-}" ]] || printf -v "$3" '%s' 0; return 0; }
+cert_setup_renewal_timer() { return 0; }
+_cert_restart_consumers_if_changed() { return 0; }
+metadata_cert_set() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$@" >"$META_LOG"; return 0; }
+ok _cert_acme_issue_locked example.com user@example.com http 0
+eqv "$(cat "$OWNER_LOG")" nginx 'HTTP issue helper receives the original owner snapshot'
+has "$(cat "$META_LOG")" $'letsencrypt\thttp-nginx\ttrue' 'metadata matches the actual nginx issuance branch'
+
+# Restore real metadata helpers before the final lock test.
+source "${PROJECT_DIR}/lib/metadata.sh"
+_cert_require_root() { return 0; }
+
+# 14. Real cert-lock contention blocks mutating certificate operations.
 export CERT_READY="${ROOT}/cert-ready"
 export CERT_RELEASE="${ROOT}/cert-release"
 rm -f "$CERT_READY" "$CERT_RELEASE"
