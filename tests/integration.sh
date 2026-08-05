@@ -20,6 +20,11 @@ source "$PROJECT_DIR/lib/common/lock.sh"
 source "$PROJECT_DIR/lib/common/certificate.sh"
 source "$PROJECT_DIR/lib/common/backup.sh"
 
+# Mirror proxyctl.sh's engine registry while keeping the engine process boundary
+# mocked below. apply_candidate checks engine_exists before calling engine_call.
+_register_engine xray
+_register_engine singbox
+
 PASS=0; FAIL=0
 pass(){ echo "  PASS: $*"; ((++PASS)); }
 fail(){ echo "  FAIL: $*" >&2; ((++FAIL)); }
