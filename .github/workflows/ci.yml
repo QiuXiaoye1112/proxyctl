@@ -10,7 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +27,9 @@ jobs:
 
       - name: Core smoke
         run: bash tests/smoke.sh
+
+      - name: Installer transaction
+        run: sudo bash tests/installer.sh
 
       - name: System abstraction
         run: bash tests/system.sh
@@ -61,8 +64,14 @@ jobs:
       - name: Core lifecycle adapters
         run: bash tests/engine_lifecycle.sh
 
-      - name: Inbound and user lifecycle
+      - name: Inbound lifecycle
         run: bash tests/inbounds.sh
+
+      - name: Hardened sing-box users
+        run: bash tests/singbox_clients.sh
+
+      - name: Restore runtime synchronization
+        run: bash tests/runtime.sh
 
   real-protocols:
     runs-on: ubuntu-latest
