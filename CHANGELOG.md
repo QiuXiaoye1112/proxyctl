@@ -15,20 +15,29 @@
   command's exit code, and does not release a lock the caller already held
 - kernel-enforced auto-release on process exit (normal, crash, or SIGKILL);
   lock files are never deleted and their existence is not a lock
-- `PROXYCTL_CERT_LOCK` and `PROXYCTL_FIREWALL_LOCK` paths (defaults
-  `/run/lock/proxyctl-cert.lock`, `/run/lock/proxyctl-firewall.lock`)
-- per-module suite `tests/lock.sh`: real-flock cross-process coverage
-  (contention, reacquire, independent locks, with_lock ownership, exit/SIGTERM
-  auto-release, unknown-name rejection, fail-closed without flock) using
-  READY/RELEASE markers for deterministic timing
+- per-module suites `tests/lock.sh` and `tests/lock_security.sh`: real-flock
+  contention/ownership coverage plus lock-path hardening regressions
 - smoke test: light `lock_path` contract checks (config/cert/firewall mapping,
   unknown-name rejection)
+
+### Fixed
+
+- removed Bash 4.2-only `declare -g`; lock state now uses Bash 4.0-compatible
+  top-level associative arrays
+- moved default lock files from the shared `/run/lock` directory into the
+  dedicated `/run/proxyctl/` runtime directory
+- lock setup now rejects symlink parents/files, non-regular lock paths,
+  foreign-owned paths, and group/world-writable lock directories before open
+- lock fds are opened append-only so acquiring an existing regular lock file
+  never truncates it
+- duplicate acquire checks current-process ownership before checking for the
+  `flock` executable, preserving true idempotent semantics
 
 ### Changed
 
 - version: 0.2.2 → 0.2.3
-- README: process locking moved from Planned to Implemented; lock semantics and
-  the three lock files documented
+- README: process locking moved from Planned to Implemented; lock semantics,
+  secure runtime directory, and lock paths documented
 
 ## [0.2.2] — Unreleased
 
@@ -173,7 +182,7 @@
 - 3-way LIB_DIR resolution (DEV_LIB → sibling lib/ → installed path)
 - `engine_validate_registration()` for automated API completeness checks
 - `apply_candidate()` interface (fail-closed stub)
-- `metadata_set_string()` and `metadata_set_json()` with `jq --arg` / `--argjson`
+- `metadata_set_string()` and `metadata_set_json()` with `jq --arg` / `jq --argjson`
 - `transaction_dir()` helper and path-safety guard `_transaction_safe_path()`
 - `internal-init` CLI command for post-install metadata initialisation
 - `/usr/local/bin/proxyctl` symlink in installer
@@ -202,5 +211,5 @@
 ### Security
 
 - `transaction_commit`/`rollback` validate paths are inside transactions root
-- `metadata_set_*` uses `jq --arg` / `--argjson` — no dynamic jq injection
+- `metadata_set_*` uses `jq --arg` / `jq --argjson` — no dynamic jq injection
 - Temporary metadata files use `umask 077`
