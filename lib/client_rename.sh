@@ -66,6 +66,10 @@ engine_singbox_inbound_client_rename() {
     return "$rc"
 }
 
-inbound_client_rename() {
+_inbound_client_rename_locked() {
     inbound_call "$1" client_rename "${@:2}"
+}
+
+inbound_client_rename() {
+    _inbound_with_config_lock _inbound_client_rename_locked "$@"
 }
