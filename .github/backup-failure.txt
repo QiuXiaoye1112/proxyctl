@@ -1,0 +1,42 @@
+rc=1
+--- tail ---
++ local 'text=Unknown engine: xray'
++ echo -e '\033[0;31m[x]\033[0m Unknown engine: xray'
+[0;31m[x][0m Unknown engine: xray
++ return 1
++ return 1
++ critical 'Restore rollback failed. Recovery snapshot preserved at: /tmp/tmp.GblxPHwGE2/backups/.rollback.T2L5ij'
++ local 'text=Restore rollback failed. Recovery snapshot preserved at: /tmp/tmp.GblxPHwGE2/backups/.rollback.T2L5ij'
++ echo -e '\033[0;31m[CRITICAL]\033[0m Restore rollback failed. Recovery snapshot preserved at: /tmp/tmp.GblxPHwGE2/backups/.rollback.T2L5ij'
+[0;31m[CRITICAL][0m Restore rollback failed. Recovery snapshot preserved at: /tmp/tmp.GblxPHwGE2/backups/.rollback.T2L5ij
++ critical 'Extracted target backup preserved at: /tmp/tmp.GblxPHwGE2/backups/.restore.v6kxXv'
++ local 'text=Extracted target backup preserved at: /tmp/tmp.GblxPHwGE2/backups/.restore.v6kxXv'
++ echo -e '\033[0;31m[CRITICAL]\033[0m Extracted target backup preserved at: /tmp/tmp.GblxPHwGE2/backups/.restore.v6kxXv'
+[0;31m[CRITICAL][0m Extracted target backup preserved at: /tmp/tmp.GblxPHwGE2/backups/.restore.v6kxXv
++ return 1
++ rc=1
++ ((  owned_before == 0  ))
++ lock_release cert
++ local name=cert
++ local fd
++ _lock_validate_name cert
++ local name=cert
++ case "${name}" in
++ return 0
++ lock_is_held cert
++ local name=cert
++ _lock_validate_name cert
++ local name=cert
++ case "${name}" in
++ return 0
++ [[ 1 == \1 ]]
++ fd=201
++ [[ -n 201 ]]
++ flock -u 201
++ _lock_close_fd cert
++ case "${1:-}" in
++ exec
+  PASS: backup creation fails under config-lock contention
+  PASS: backup lock contention reports busy state
+
+Backup tests: 19 passed, 6 failed
