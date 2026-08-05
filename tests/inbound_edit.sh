@@ -9,19 +9,26 @@ set -o pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 command -v jq >/dev/null 2>&1 || { echo 'requires jq' >&2; exit 2; }
+command -v flock >/dev/null 2>&1 || { echo 'requires flock' >&2; exit 2; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
 export PROXYCTL_DATA="$ROOT/data"
 export PROXYCTL_META="$PROXYCTL_DATA/meta.json"
+export PROXYCTL_LOCK_DIR="$ROOT/locks"
+export PROXYCTL_LOCK="$PROXYCTL_LOCK_DIR/config.lock"
+export PROXYCTL_CERT_LOCK="$PROXYCTL_LOCK_DIR/cert.lock"
+export PROXYCTL_FIREWALL_LOCK="$PROXYCTL_LOCK_DIR/firewall.lock"
 export XRAY_CONFIG="$ROOT/xray.json"
 export SINGBOX_CONFIG="$ROOT/singbox.json"
+mkdir -m 700 -p "$PROXYCTL_DATA" "$PROXYCTL_LOCK_DIR"
 
 source "$PROJECT_DIR/lib/ui.sh"
 source "$PROJECT_DIR/lib/core.sh"
 source "$PROJECT_DIR/lib/metadata.sh"
 source "$PROJECT_DIR/lib/common/network.sh"
 source "$PROJECT_DIR/lib/common/port.sh"
+source "$PROJECT_DIR/lib/common/lock.sh"
 source "$PROJECT_DIR/lib/xray/engine.sh"
 source "$PROJECT_DIR/lib/singbox/engine.sh"
 source "$PROJECT_DIR/lib/inbound.sh"
@@ -68,7 +75,7 @@ eqv "$(jq -r '.inbounds[0].listen' "$SINGBOX_CONFIG")" ::1 'sing-box listen addr
 eqv "$(jq -r '.inbounds[0].listen_port' "$SINGBOX_CONFIG")" 42002 'sing-box listen port changes'
 eqv "$(inbound_meta_get singbox s clientHost)" sb-new.example 'sing-box client host metadata changes'
 
-# Runtime synchronization failure must restore the old config.
+# Runtime synchronization failure must restore the old config and metadata.
 POST_RC=1
 before=$(jq -c . "$SINGBOX_CONFIG")
 bad inbound_modify_listen singbox s 127.0.0.1 42003 should-not-stick.example
