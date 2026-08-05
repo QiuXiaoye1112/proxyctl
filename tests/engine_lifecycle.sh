@@ -16,6 +16,7 @@ export XRAY_CONFIG="$ROOT/xray/config.json"
 export SINGBOX_CONFIG="$ROOT/singbox/config.json"
 export PROXYCTL_SYSTEMD_UNIT_DIR="$ROOT/systemd"
 export PROXYCTL_OPENRC_INIT_DIR="$ROOT/openrc"
+export PROXYCTL_XRAY_LOG_DIR="$ROOT/xray-log"
 export PROXYCTL_SINGBOX_DATA="$ROOT/singbox-data"
 export PROXYCTL_CERTS="$ROOT/certs"
 export PROXYCTL_CERT_GROUP="$(id -gn)"
@@ -102,6 +103,7 @@ contains "$(cat "$PROXYCTL_OPENRC_INIT_DIR/sing-box")" "$SINGBOX_CONFIG" 'sing-b
 ok _engine_xray_write_openrc_service
 contains "$(cat "$PROXYCTL_OPENRC_INIT_DIR/xray")" 'managed by ProxyCTL' 'Xray OpenRC service has ownership marker'
 contains "$(cat "$PROXYCTL_OPENRC_INIT_DIR/xray")" "$XRAY_CONFIG" 'Xray OpenRC service uses configured path'
+contains "$(cat "$PROXYCTL_OPENRC_INIT_DIR/xray")" "$PROXYCTL_XRAY_LOG_DIR" 'Xray OpenRC service uses configured log directory'
 
 # Root checks fail before any network/package mutation.
 system_is_root(){ return 1; }
@@ -147,7 +149,6 @@ package_remove(){ printf '%s\n' "$*" >"$ROOT/package-remove"; return 0; }
 system_init(){ printf '%s\n' systemd; }
 printf 'keep-xray\n' >"$XRAY_CONFIG.keep"
 printf 'keep-singbox\n' >"$SINGBOX_CONFIG.keep"
-# sing-box uninstall is fully mockable through the shared package API.
 ok engine_singbox_uninstall
 [[ -f "$SINGBOX_CONFIG" ]] && pass 'sing-box uninstall preserves config' || fail 'sing-box uninstall preserves config'
 contains "$(cat "$ROOT/package-remove")" 'sing-box' 'sing-box uninstall delegates package removal'
