@@ -164,6 +164,10 @@ choose() {
         return 1
     }
 
+    case "$_ui_prompt" in
+        '主菜单'|'入站管理'|'入站操作'|'用户管理'|'出站管理'|'核心管理'|'证书管理'|'备份管理'|'系统工具') ui_clear_screen ;;
+    esac
+
     echo ''
     echo "$_ui_prompt"
     echo ''
