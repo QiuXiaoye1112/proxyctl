@@ -73,6 +73,9 @@ jobs:
       - name: Inbound edits and user rename
         run: bash tests/inbound_edit.sh
 
+      - name: Outbound lifecycle and routing safety
+        run: bash tests/outbounds.sh
+
       - name: Restore runtime synchronization
         run: bash tests/runtime.sh
 
@@ -102,5 +105,5 @@ jobs:
           sudo systemctl stop sing-box.service || true
           sing-box version
 
-      - name: Validate every Phase 3 protocol with real cores
+      - name: Validate protocol and outbound builders with real cores
         run: bash tests/protocols_real.sh
