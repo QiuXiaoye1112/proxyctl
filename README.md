@@ -1,4 +1,4 @@
-# ProxyCTL 0.2.1
+# ProxyCTL 0.2.2
 
 Unified proxy manager for Xray and sing-box.
 
@@ -9,7 +9,12 @@ Unified proxy manager for Xray and sing-box.
 - Linux
 - Bash 4.0+
 - jq
-- flock
+- flock (util-linux)
+- iproute2 (`ip`, `ss`)
+- curl
+
+DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
+`dig` is never required.
 
 ## Implemented
 
@@ -24,6 +29,12 @@ Unified proxy manager for Xray and sing-box.
   hostname detection with canonical arch tokens (`amd64`, `arm64`, `armv7`, `386`)
 - **Service abstraction** — unified `service_*` API over systemd and OpenRC
   (`start`/`stop`/`restart`/`enable`/`disable`/`is_active`/`is_enabled`/`logs`)
+- **Network utilities** — IPv4/IPv6/domain/host validation, default-interface and
+  primary-IP detection from `ip route get`, public-IP detection with a timed
+  3-provider fallback, DNS resolution (getent → nslookup), timed TCP connect
+- **Port utilities** — TCP/UDP listening inspection via `ss` (netstat fallback),
+  exact port matching, process lookup, free-port checks that fail closed on
+  inspection errors, and randomized free-port allocation
 - **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
@@ -32,14 +43,13 @@ Unified proxy manager for Xray and sing-box.
   symlink, metadata init, and a unified rollback that restores the previous
   installation on any failure. Old artifacts are kept until the final commit.
 - **Test suites** — `smoke.sh` (core contract) plus per-module suites
-  (`system.sh`, `service.sh`)
+  (`system.sh`, `service.sh`, `network.sh`, `port.sh`)
 
 ## Planned (future phases)
 
 - Core installation (Xray, sing-box)
 - Real configuration generation (VLESS, VMess, Trojan, AnyTLS, Hysteria2, …)
 - TLS certificate management (self-signed + ACME)
-- Network / port utilities (IP detection, TCP/UDP port checks)
 - Process locking (`flock`-based)
 - Configuration apply transactions (`apply_candidate`)
 - Backup and restore

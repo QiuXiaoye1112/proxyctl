@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.2] — Unreleased
+
+### Added
+
+- network validation: strict IPv4 (four 0-255 octets), IPv6 via python3
+  `ipaddress` with a pure-shell RFC 4291 fallback, `network_validate_ip`,
+  format-only `network_validate_domain`, `network_validate_host`
+- route utilities: `network_default_interface_v4/v6` and
+  `network_primary_ipv4/v6` from `ip route get`, with re-validation of the
+  extracted source address; `network_has_ipv4/v6`
+- public IP: `network_public_ipv4/v6` with a timed (connect 3s / total 5s)
+  3-provider fallback (Cloudflare trace, ipify, icanhazip), forced `-4`/`-6`,
+  and re-validation of every provider response
+- DNS: `network_resolve_domain` (getent → nslookup, dedup, family filter)
+- connectivity: `network_tcp_connect` (nc → timeout + /dev/tcp) with
+  host/port/timeout validation
+- port inspection: `port_validate`, `port_is_listening`, `port_is_free`,
+  `port_process`, `port_require_free`, `port_random` backed by `ss` (netstat
+  fallback) with exact port matching, TCP/UDP separation, and fail-closed
+  behaviour when inspection itself fails
+- per-module test suites: `tests/network.sh`, `tests/port.sh` (mocked
+  ip/curl/getent/nc/ss — no real network or host socket state needed)
+
+### Changed
+
+- version: 0.2.1 → 0.2.2
+- README requirements now list `iproute2` (`ip`, `ss`) and `curl`; `dig` is
+  never required (getent preferred, nslookup fallback)
+
 ## [0.2.1] — Unreleased
 
 ### Fixed

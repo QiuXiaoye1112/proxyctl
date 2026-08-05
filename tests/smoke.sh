@@ -169,7 +169,7 @@ echo '--- 2. Source-layout execution ---'
 out=$(run_proxyctl version)
 rc=$?
 assert_eq "${rc}" '0' 'version exits 0'
-assert_contains "${out}" '0.2.1' 'version outputs 0.2.1'
+assert_contains "${out}" '0.2.2' 'version outputs 0.2.2'
 
 out=$(run_proxyctl help)
 assert_eq "$?" '0' 'help exits 0'
@@ -197,7 +197,7 @@ installed_test() {
 }
 
 out=$(installed_test)
-assert_contains "${out}" '0.2.1' 'installed layout: version works'
+assert_contains "${out}" '0.2.2' 'installed layout: version works'
 
 # ============================================================================
 # 4. CLI exit codes
@@ -777,7 +777,7 @@ echo '--- 23. Full load ---'
 
 out=$(run_proxyctl version)
 assert_eq "$?" '0' 'proxyctl loads without error'
-assert_contains "${out}" '0.2.1' 'proxyctl version reports 0.2.1'
+assert_contains "${out}" '0.2.2' 'proxyctl version reports 0.2.2'
 
 # ============================================================================
 # 24. internal-init with custom paths
@@ -841,7 +841,7 @@ fi
 
 # Verify the entry point checks bash version
 out=$(run_proxyctl version)
-assert_contains "${out}" '0.2.1' 'entry point passes bash version check'
+assert_contains "${out}" '0.2.2' 'entry point passes bash version check'
 
 # ============================================================================
 # 27. apply_candidate detects missing file
