@@ -61,9 +61,11 @@ source "${LIB_DIR}/common/bbr.sh"
 source "${LIB_DIR}/xray/engine.sh"
 source "${LIB_DIR}/singbox/engine.sh"
 source "${LIB_DIR}/inbound.sh"
+source "${LIB_DIR}/inbound_edit.sh"
 source "${LIB_DIR}/xray/inbound.sh"
 source "${LIB_DIR}/singbox/inbound.sh"
 source "${LIB_DIR}/singbox/clients.sh"
+source "${LIB_DIR}/client_rename.sh"
 source "${LIB_DIR}/singbox/hy2_hop.sh"
 source "${LIB_DIR}/runtime.sh"
 source "${LIB_DIR}/menu.sh"
@@ -137,6 +139,10 @@ cmd_inbound() {
             if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; inbound_add_from_spec "$engine" "$4"; else inbound_add_interactive "$engine"; fi
             ;;
         show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound show <engine> <tag>'; return 1; }; inbound_show "$engine" "$3" ;;
+        modify)
+            [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" && -n "${5:-}" ]] || { error 'Usage: proxyctl inbound modify <engine> <tag> <listen-ip> <port> [client-host]'; return 1; }
+            inbound_modify_listen "$engine" "$3" "$4" "$5" "${6:-}"
+            ;;
         rename) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl inbound rename <engine> <old> <new>'; return 1; }; inbound_rename "$engine" "$3" "$4" ;;
         delete)
             [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound delete <engine> <tag> [--yes]'; return 1; }
@@ -149,10 +155,11 @@ cmd_inbound() {
 
 cmd_client() {
     local action="${1:-list}" engine="${2:-}" tag="${3:-}" answer
-    [[ -n "$engine" && -n "$tag" ]] || { error 'Usage: proxyctl client <list|add|rotate|delete> <engine> <tag> ...'; return 1; }
+    [[ -n "$engine" && -n "$tag" ]] || { error 'Usage: proxyctl client <list|add|rename|rotate|delete> <engine> <tag> ...'; return 1; }
     case "$action" in
         list) inbound_clients "$engine" "$tag" ;;
         add) inbound_client_add "$engine" "$tag" "${4:-}" "${5:-}" ;;
+        rename) [[ -n "${4:-}" && -n "${5:-}" ]] || { error 'Usage: proxyctl client rename <engine> <tag> <old> <new>'; return 1; }; inbound_client_rename "$engine" "$tag" "$4" "$5" ;;
         rotate) [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client rotate <engine> <tag> <user> [credential]'; return 1; }; inbound_client_rotate "$engine" "$tag" "$4" "${5:-}" ;;
         delete)
             [[ -n "${4:-}" ]] || { error 'Usage: proxyctl client delete <engine> <tag> <user> [--yes]'; return 1; }
@@ -191,11 +198,13 @@ Usage:
   proxyctl inbound add <engine>
   proxyctl inbound add <engine> --json '<spec>'
   proxyctl inbound show <engine> <tag>
+  proxyctl inbound modify <engine> <tag> <listen-ip> <port> [client-host]
   proxyctl inbound rename <engine> <old> <new>
   proxyctl inbound delete <engine> <tag> [--yes]
 
   proxyctl client list <engine> <tag>
   proxyctl client add <engine> <tag> [name] [credential]
+  proxyctl client rename <engine> <tag> <old> <new>
   proxyctl client rotate <engine> <tag> <name> [credential]
   proxyctl client delete <engine> <tag> <name> [--yes]
   proxyctl link <engine> <tag> [name]
