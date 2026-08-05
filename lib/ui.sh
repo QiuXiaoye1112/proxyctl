@@ -72,6 +72,12 @@ _ui_translate_option() {
     esac
 }
 
+ui_clear_screen() {
+    [[ -t 1 ]] || return 0
+    [[ "${TERM:-}" != dumb ]] || return 0
+    printf '\033[2J\033[H'
+}
+
 heading() {
     local text="$1"
     echo ''
@@ -107,33 +113,33 @@ critical() {
 }
 
 pause() {
-    local prompt="${1:-按 Enter 继续...}"
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_prompt="${1:-按 Enter 继续...}"
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     [[ -t 0 ]] || return 0
-    read -r -p "$prompt"
+    read -r -p "$_ui_prompt"
 }
 
 confirm() {
     local __var="$1"
-    local prompt="${2:-是否继续？}"
-    local default="${3:-n}"
-    local response
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_prompt="${2:-是否继续？}"
+    local _ui_default="${3:-n}"
+    local _ui_response
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
 
     if [[ ! -t 0 ]] && [[ -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then
         error '交互确认需要在终端中执行。'
         return 1
     fi
 
-    if [[ "$default" == y ]]; then
-        read -r -p "${prompt} [Y/n] " response
-        response="${response:-y}"
+    if [[ "$_ui_default" == y ]]; then
+        read -r -p "${_ui_prompt} [Y/n] " _ui_response
+        _ui_response="${_ui_response:-y}"
     else
-        read -r -p "${prompt} [y/N] " response
-        response="${response:-n}"
+        read -r -p "${_ui_prompt} [y/N] " _ui_response
+        _ui_response="${_ui_response:-n}"
     fi
 
-    case "${response,,}" in
+    case "${_ui_response,,}" in
         y|yes|是|好|确认) printf -v "$__var" '%s' y ;;
         *) printf -v "$__var" '%s' n ;;
     esac
@@ -141,13 +147,14 @@ confirm() {
 
 choose() {
     local __var="$1"
-    local prompt="$2"
+    local _ui_prompt="$2"
     shift 2
-    local options=("$@")
-    local count="${#options[@]}"
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_options=("$@")
+    local _ui_count="${#_ui_options[@]}"
+    local _ui_i _ui_display _ui_selection
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
 
-    if (( count == 0 )); then
+    if (( _ui_count == 0 )); then
         error '没有可选项。'
         return 1
     fi
@@ -158,56 +165,54 @@ choose() {
     }
 
     echo ''
-    echo "$prompt"
+    echo "$_ui_prompt"
     echo ''
 
-    local i display
-    for i in "${!options[@]}"; do
-        display=$(_ui_translate_option "${options[$i]}")
-        printf '  %d) %s\n' "$((i + 1))" "$display"
+    for _ui_i in "${!_ui_options[@]}"; do
+        _ui_display=$(_ui_translate_option "${_ui_options[$_ui_i]}")
+        printf '  %d) %s\n' "$((_ui_i + 1))" "$_ui_display"
     done
 
     echo ''
-    local choice
     while true; do
-        read -r -p "请选择 [1-${count}]：" choice || {
+        read -r -p "请选择 [1-${_ui_count}]：" _ui_selection || {
             echo ''
             return 1
         }
-        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= count )); then
-            printf -v "$__var" '%s' "${options[$((choice - 1))]}"
+        if [[ "$_ui_selection" =~ ^[0-9]+$ ]] && (( _ui_selection >= 1 && _ui_selection <= _ui_count )); then
+            printf -v "$__var" '%s' "${_ui_options[$((_ui_selection - 1))]}"
             return 0
         fi
-        warn "输入无效，请输入 1-${count}。"
+        warn "输入无效，请输入 1-${_ui_count}。"
     done
 }
 
 prompt_value() {
     local __var="$1"
-    local prompt="$2"
-    local default="${3:-}"
-    local value
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_prompt="$2"
+    local _ui_default="${3:-}"
+    local _ui_value
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
 
-    if [[ -n "$default" ]]; then
+    if [[ -n "$_ui_default" ]]; then
         [[ -t 0 ]] || {
-            printf -v "$__var" '%s' "$default"
+            printf -v "$__var" '%s' "$_ui_default"
             return 0
         }
-        read -r -p "${prompt} [${default}]：" value
-        printf -v "$__var" '%s' "${value:-$default}"
+        read -r -p "${_ui_prompt} [${_ui_default}]：" _ui_value
+        printf -v "$__var" '%s' "${_ui_value:-$_ui_default}"
     else
         [[ -t 0 ]] || {
             error '该操作需要在终端中输入值。'
             return 1
         }
         while true; do
-            read -r -p "${prompt}：" value || {
+            read -r -p "${_ui_prompt}：" _ui_value || {
                 echo ''
                 return 1
             }
-            if [[ -n "$value" ]]; then
-                printf -v "$__var" '%s' "$value"
+            if [[ -n "$_ui_value" ]]; then
+                printf -v "$__var" '%s' "$_ui_value"
                 return 0
             fi
             warn '该项不能为空。'
@@ -217,56 +222,56 @@ prompt_value() {
 
 prompt_optional() {
     local __var="$1"
-    local prompt="$2"
-    local default="${3:-}"
-    local value
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_prompt="$2"
+    local _ui_default="${3:-}"
+    local _ui_value
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
 
     [[ -t 0 ]] || {
-        printf -v "$__var" '%s' "$default"
+        printf -v "$__var" '%s' "$_ui_default"
         return 0
     }
 
-    read -r -p "${prompt}：" value
-    printf -v "$__var" '%s' "${value:-$default}"
+    read -r -p "${_ui_prompt}：" _ui_value
+    printf -v "$__var" '%s' "${_ui_value:-$_ui_default}"
 }
 
 prompt_secret() {
     local __var="$1"
-    local prompt="$2"
-    local value
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_prompt="$2"
+    local _ui_value
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
 
     [[ -t 0 ]] || {
         error '密码输入需要在终端中执行。'
         return 1
     }
 
-    read -r -s -p "${prompt}：" value || {
+    read -r -s -p "${_ui_prompt}：" _ui_value || {
         echo ''
         return 1
     }
     echo ''
-    printf -v "$__var" '%s' "$value"
+    printf -v "$__var" '%s' "$_ui_value"
 }
 
 prompt_hidden_secret() {
     local __var="$1"
-    local prompt="$2"
-    local value
-    prompt=$(_ui_translate_prompt "$prompt")
+    local _ui_prompt="$2"
+    local _ui_value
+    _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
 
     [[ -t 0 ]] || {
         error '敏感信息输入需要在终端中执行。'
         return 1
     }
 
-    read -r -s -p "${prompt}：" value || {
+    read -r -s -p "${_ui_prompt}：" _ui_value || {
         echo ''
         return 1
     }
     echo ''
-    printf -v "$__var" '%s' "$value"
+    printf -v "$__var" '%s' "$_ui_value"
 }
 
 table_header() {
