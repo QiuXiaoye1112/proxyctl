@@ -52,6 +52,7 @@ ok(){ if "$@"; then pass "$*"; else fail "$*"; fi; }
 bad(){ if "$@" >/dev/null 2>&1; then fail "$*"; else pass "$*"; fi; }
 present(){ [[ -e "$1" || -L "$1" ]] && pass "$2" || fail "$2"; }
 absent(){ [[ ! -e "$1" && ! -L "$1" ]] && pass "$2" || fail "$2"; }
+contains_file(){ grep -Fq -- "$2" "$1" && pass "$3" || fail "$3"; }
 
 seed_manager() {
     mkdir -p "$(dirname "$PROXYCTL_BIN")" "$PROXYCTL_LIB" "$(dirname "$ROOT/usr/local/bin/proxyctl")"
@@ -60,11 +61,18 @@ seed_manager() {
     ln -sfn "$PROXYCTL_BIN" "$ROOT/usr/local/bin/proxyctl"
 }
 seed_state() {
-    mkdir -p "$PROXYCTL_DATA" "$PROXYCTL_CERTS/example" "$PROXYCTL_BACKUP" "$(dirname "$XRAY_CONFIG")" "$(dirname "$SINGBOX_CONFIG")"
+    mkdir -p "$PROXYCTL_DATA" "$PROXYCTL_CERTS/example" "$PROXYCTL_BACKUP" \
+        "$PROXYCTL_CERTBOT_VENV" "$PROXYCTL_CERTBOT_CONFIG" "$PROXYCTL_CERTBOT_WORK" "$PROXYCTL_CERTBOT_LOGS" \
+        "$(dirname "$XRAY_CONFIG")" "$(dirname "$SINGBOX_CONFIG")" "$(dirname "$PROXYCTL_CLOUDFLARE_INI")"
     printf '{"version":1,"inbounds":{},"certificates":{},"firewall":{}}\n' >"$PROXYCTL_META"
     printf '{}\n' >"$XRAY_CONFIG"; printf '{}\n' >"$SINGBOX_CONFIG"
     printf 'cert\n' >"$PROXYCTL_CERTS/example/fullchain.pem"
     printf 'backup\n' >"$PROXYCTL_BACKUP/keep"
+    printf 'venv\n' >"$PROXYCTL_CERTBOT_VENV/marker"
+    printf 'config\n' >"$PROXYCTL_CERTBOT_CONFIG/marker"
+    printf 'work\n' >"$PROXYCTL_CERTBOT_WORK/marker"
+    printf 'logs\n' >"$PROXYCTL_CERTBOT_LOGS/marker"
+    printf 'dns_cloudflare_api_token = secret\n' >"$PROXYCTL_CLOUDFLARE_INI"
 }
 seed_units() {
     mkdir -p "$PROXYCTL_SYSTEMD_UNIT_DIR"
@@ -82,6 +90,13 @@ EOF
 [Unit]
 Description=ProxyCTL Hysteria2 port hopping redirects
 EOF
+}
+seed_cert_dropins() {
+    local group
+    group=$(cert_runtime_group)
+    mkdir -p "$PROXYCTL_SYSTEMD_UNIT_DIR/xray.service.d" "$PROXYCTL_SYSTEMD_UNIT_DIR/sing-box.service.d"
+    printf '[Service]\nSupplementaryGroups=%s\n' "$group" >"$PROXYCTL_SYSTEMD_UNIT_DIR/xray.service.d/20-proxyctl-certificates.conf"
+    printf '[Service]\nSupplementaryGroups=%s\n' "$group" >"$PROXYCTL_SYSTEMD_UNIT_DIR/sing-box.service.d/20-proxyctl-certificates.conf"
 }
 
 printf '\nProxyCTL uninstall tests\n\n'
@@ -120,6 +135,34 @@ ln -s /some/other/program "$ROOT/usr/local/bin/proxyctl"
 singbox_hy2_hop_count(){ printf '%s\n' 0; }
 ok _uninstall_manager_only 0
 present "$ROOT/usr/local/bin/proxyctl" 'unrelated proxyctl symlink is not deleted'
+rm -f "$ROOT/usr/local/bin/proxyctl"
+
+# Full purge stays entirely inside ROOT and removes both core state trees.
+seed_manager; seed_state; seed_units; seed_cert_dropins
+XRAY_REMOVED="$ROOT/xray-removed"; SINGBOX_REMOVED="$ROOT/singbox-removed"
+engine_xray_installed(){ return 0; }
+engine_singbox_installed(){ return 0; }
+engine_xray_uninstall(){ printf 'yes\n' >"$XRAY_REMOVED"; return 0; }
+engine_singbox_uninstall(){ printf 'yes\n' >"$SINGBOX_REMOVED"; return 0; }
+singbox_hy2_hop_count(){ printf '%s\n' 0; }
+ok proxyctl_uninstall --purge --yes
+present "$XRAY_REMOVED" 'purge invokes Xray core uninstall'
+present "$SINGBOX_REMOVED" 'purge invokes sing-box core uninstall'
+absent "$(dirname "$XRAY_CONFIG")" 'purge removes Xray config root'
+absent "$(dirname "$SINGBOX_CONFIG")" 'purge removes sing-box config root'
+absent "$PROXYCTL_CERTS" 'purge removes managed certificates'
+absent "$PROXYCTL_DATA" 'purge removes metadata/data tree'
+absent "$PROXYCTL_BACKUP" 'purge removes backup tree'
+absent "$PROXYCTL_CERTBOT_VENV" 'purge removes Certbot virtualenv'
+absent "$PROXYCTL_CERTBOT_CONFIG" 'purge removes Certbot lineage/config state'
+absent "$PROXYCTL_CERTBOT_WORK" 'purge removes Certbot work state'
+absent "$PROXYCTL_CERTBOT_LOGS" 'purge removes Certbot logs'
+absent "$PROXYCTL_CLOUDFLARE_INI" 'purge removes Cloudflare credentials'
+absent "$PROXYCTL_SYSTEMD_UNIT_DIR/xray.service.d/20-proxyctl-certificates.conf" 'purge recognizes legacy unmarked Xray certificate drop-in'
+absent "$PROXYCTL_SYSTEMD_UNIT_DIR/sing-box.service.d/20-proxyctl-certificates.conf" 'purge recognizes legacy unmarked sing-box certificate drop-in'
+absent "$PROXYCTL_BIN" 'purge removes manager binary'
+absent "$PROXYCTL_LIB" 'purge removes manager library'
+absent "$ROOT/usr/local/bin/proxyctl" 'purge removes owned manager symlink'
 
 printf '\nUninstall tests: %d passed, %d failed\n' "$PASS" "$FAIL"
 ((FAIL == 0))
