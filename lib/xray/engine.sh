@@ -49,6 +49,28 @@ JSON
     mv -f -- "$tmp" "$config"
 }
 
+# XTLS' systemd unit may run Xray as a non-root user. Reuse ProxyCTL's shared
+# runtime group so both the core config and managed private keys stay
+# non-world-readable while the service can still read them.
+_engine_xray_prepare_config_access() {
+    local config parent group
+    config=$(engine_xray_config_file)
+    parent=$(dirname "$config")
+    [[ -f "$config" && ! -L "$config" && -d "$parent" && ! -L "$parent" ]] || {
+        error "Unsafe Xray config path: ${config}"
+        return 1
+    }
+    declare -F _cert_setup_runtime_access >/dev/null 2>&1 || {
+        error 'Certificate runtime-access helper is unavailable.'
+        return 1
+    }
+    _cert_setup_runtime_access || return 1
+    group=$(cert_runtime_group) || return 1
+    chown root:"$group" "$parent" "$config" || return 1
+    chmod 750 "$parent" || return 1
+    chmod 640 "$config" || return 1
+}
+
 _engine_xray_openrc_asset() {
     case "$(system_arch)" in
         amd64) printf '%s\n' 'Xray-linux-64.zip' ;;
@@ -60,10 +82,10 @@ _engine_xray_openrc_asset() {
 }
 
 _engine_xray_write_openrc_service() {
-    local unit="/etc/init.d/$(engine_xray_service_name)" log_dir="${PROXYCTL_XRAY_LOG_DIR:-/var/log/xray}" bin
+    local unit="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}/$(engine_xray_service_name)" log_dir="${PROXYCTL_XRAY_LOG_DIR:-/var/log/xray}" bin
     bin=$(command -v xray) || return 1
     [[ ! -L "$unit" ]] || { error "Refusing symlink OpenRC service: ${unit}"; return 1; }
-    mkdir -p -- "$log_dir" || return 1
+    mkdir -p -- "$(dirname "$unit")" "$log_dir" || return 1
     cat >"$unit" <<EOF
 #!/sbin/openrc-run
 # managed by ProxyCTL
@@ -110,13 +132,14 @@ _engine_xray_install_openrc() {
     [[ -n "$expected" && "$actual" == "$expected" ]] || { rm -rf -- "$work"; error 'Xray SHA-256 verification failed.'; return 1; }
     mkdir -p -- "$work/unpacked" || { rm -rf -- "$work"; return 1; }
     unzip -q "$archive" -d "$work/unpacked" || { rm -rf -- "$work"; return 1; }
-    install -d -m 755 /usr/local/bin "$_PROXYCTL_XRAY_SHARE" || { rm -rf -- "$work"; return 1; }
-    install -m 755 "$work/unpacked/xray" /usr/local/bin/xray || { rm -rf -- "$work"; return 1; }
+    install -d -m 755 "${PROXYCTL_XRAY_BIN_DIR:-/usr/local/bin}" "$_PROXYCTL_XRAY_SHARE" || { rm -rf -- "$work"; return 1; }
+    install -m 755 "$work/unpacked/xray" "${PROXYCTL_XRAY_BIN:-/usr/local/bin/xray}" || { rm -rf -- "$work"; return 1; }
     [[ ! -f "$work/unpacked/geoip.dat" ]] || install -m 644 "$work/unpacked/geoip.dat" "$_PROXYCTL_XRAY_SHARE/geoip.dat"
     [[ ! -f "$work/unpacked/geosite.dat" ]] || install -m 644 "$work/unpacked/geosite.dat" "$_PROXYCTL_XRAY_SHARE/geosite.dat"
     rm -rf -- "$work"
     if (( had_config == 0 )); then _engine_xray_write_default_config || return 1; fi
     _engine_xray_write_openrc_service || return 1
+    _engine_xray_prepare_config_access || return 1
     engine_xray_validate "$config" || return 1
     engine_xray_enable || return 1
     if engine_xray_is_active; then engine_xray_restart; else engine_xray_start; fi
@@ -137,6 +160,7 @@ _engine_xray_install_systemd() {
     rm -f -- "$installer"
     engine_xray_installed || { error 'Xray installer completed but the xray executable was not found.'; return 1; }
     if (( had_config == 0 )); then _engine_xray_write_default_config || return 1; fi
+    _engine_xray_prepare_config_access || return 1
     engine_xray_validate "$config" || return 1
     engine_xray_enable || return 1
     if engine_xray_is_active; then engine_xray_restart; else engine_xray_start; fi
@@ -171,9 +195,9 @@ engine_xray_uninstall() {
         openrc)
             engine_xray_stop >/dev/null 2>&1 || true
             engine_xray_disable >/dev/null 2>&1 || true
-            unit="/etc/init.d/$(engine_xray_service_name)"
+            unit="${PROXYCTL_OPENRC_INIT_DIR:-/etc/init.d}/$(engine_xray_service_name)"
             if [[ -f "$unit" ]] && grep -q 'managed by ProxyCTL' "$unit" 2>/dev/null; then rm -f -- "$unit"; fi
-            rm -f -- /usr/local/bin/xray "$_PROXYCTL_XRAY_SHARE/geoip.dat" "$_PROXYCTL_XRAY_SHARE/geosite.dat"
+            rm -f -- "${PROXYCTL_XRAY_BIN:-/usr/local/bin/xray}" "$_PROXYCTL_XRAY_SHARE/geoip.dat" "$_PROXYCTL_XRAY_SHARE/geosite.dat"
             ;;
         *) error 'Unsupported init system.'; return 1 ;;
     esac
