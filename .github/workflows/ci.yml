@@ -10,7 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,6 +93,10 @@ jobs:
 
       - name: Self-uninstall safety
         run: bash tests/uninstall.sh
+
+      - name: Full regression sweep
+        if: always()
+        run: bash tests/regression.sh
 
   portability:
     runs-on: ubuntu-latest
