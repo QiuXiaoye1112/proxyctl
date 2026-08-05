@@ -49,7 +49,8 @@ engine_xray_outbound_selectable_tags() {
 }
 
 engine_xray_outbound_assign_candidate() {
-    local config="$1" inbound="$2" outbound="$3" rule_tag="proxyctl-outbound:${inbound}"
+    local config="$1" inbound="$2" outbound="$3" rule_tag=''
+    rule_tag="proxyctl-outbound:${inbound}"
     jq --arg inbound "$inbound" --arg outbound "$outbound" --arg ruleTag "$rule_tag" '
       .routing=(.routing // {domainStrategy:"IPIfNonMatch",rules:[]}) |
       (.routing.rules // [] | map(select((.ruleTag // "")!=$ruleTag))) as $rules |
