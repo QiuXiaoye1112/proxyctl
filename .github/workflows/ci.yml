@@ -76,6 +76,9 @@ jobs:
       - name: Outbound lifecycle and routing safety
         run: bash tests/outbounds.sh
 
+      - name: Existing-config reconciliation
+        run: bash tests/reconcile.sh
+
       - name: Restore runtime synchronization
         run: bash tests/runtime.sh
 
