@@ -1,4 +1,4 @@
-# ProxyCTL 0.2.2
+# ProxyCTL 0.2.3
 
 Unified proxy manager for Xray and sing-box.
 
@@ -35,6 +35,12 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
 - **Port utilities** — TCP/UDP listening inspection via `ss` (netstat fallback),
   exact port matching, process lookup, free-port checks that fail closed on
   inspection errors, and randomized free-port allocation
+- **Process locking** — `flock`-backed `config`/`cert`/`firewall` locks on fixed
+  fds with non-blocking `lock_acquire`, idempotent `lock_release`,
+  `lock_is_held`, and `with_lock` (preserves the command exit code and never
+  releases a lock the caller already held). Locks are released by the kernel
+  on process exit, including crash or SIGKILL — a leftover lock file is not a
+  lock and is never deleted
 - **UI library** — `heading`, `info`, `warn`, `error`, `die`, `pause`, `confirm`,
   `choose`, `prompt_value`, `prompt_optional`, `prompt_secret`,
   `prompt_hidden_secret`, `table_header`, `table_row`, `table_footer`
@@ -50,7 +56,6 @@ DNS resolution prefers `getent` (glibc/musl) and falls back to `nslookup`;
 - Core installation (Xray, sing-box)
 - Real configuration generation (VLESS, VMess, Trojan, AnyTLS, Hysteria2, …)
 - TLS certificate management (self-signed + ACME)
-- Process locking (`flock`-based)
 - Configuration apply transactions (`apply_candidate`)
 - Backup and restore
 - Firewall setup
@@ -101,7 +106,9 @@ proxyctl/
 | `/var/lib/proxyctl/meta.json`     | Metadata       |
 | `/etc/proxyctl/certs/`            | Certificates   |
 | `/var/backups/proxyctl/`          | Backups        |
-| `/run/lock/proxyctl.lock`         | Lock file      |
+| `/run/lock/proxyctl.lock`         | Config lock file   |
+| `/run/lock/proxyctl-cert.lock`    | Certificate lock file |
+| `/run/lock/proxyctl-firewall.lock`| Firewall lock file |
 
 ## Security
 
@@ -115,6 +122,10 @@ proxyctl/
   until the final commit, and any failure restores the previous installation
   (including first-install cleanup)
 - Data directories are created with mode 700 (including the transaction root)
+- Locking uses kernel `flock` on a held-open fd, never lock-file existence;
+  lock files are never deleted (deleting one would let two processes lock
+  different inodes and both win), and lock names are strictly mapped to fixed
+  paths — no user input is ever spliced into a path
 
 ## Development
 

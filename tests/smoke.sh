@@ -49,7 +49,9 @@ export PROXYCTL_META="${PROXYCTL_DATA}/meta.json"
 export PROXYCTL_CERTS="${PROXYCTL_DATA}/certs"
 export PROXYCTL_BACKUP="${PROXYCTL_DATA}/backup"
 export PROXYCTL_LOCK="/tmp/proxyctl-test.lock"
-rm -rf "${PROXYCTL_DATA}" "${PROXYCTL_LOCK}"
+export PROXYCTL_CERT_LOCK="/tmp/proxyctl-cert-test.lock"
+export PROXYCTL_FIREWALL_LOCK="/tmp/proxyctl-firewall-test.lock"
+rm -rf "${PROXYCTL_DATA}" "${PROXYCTL_LOCK}" "${PROXYCTL_CERT_LOCK}" "${PROXYCTL_FIREWALL_LOCK}"
 
 # run_proxyctl — preserves real exit code.
 run_proxyctl() {
@@ -169,7 +171,7 @@ echo '--- 2. Source-layout execution ---'
 out=$(run_proxyctl version)
 rc=$?
 assert_eq "${rc}" '0' 'version exits 0'
-assert_contains "${out}" '0.2.2' 'version outputs 0.2.2'
+assert_contains "${out}" '0.2.3' 'version outputs 0.2.3'
 
 out=$(run_proxyctl help)
 assert_eq "$?" '0' 'help exits 0'
@@ -197,7 +199,7 @@ installed_test() {
 }
 
 out=$(installed_test)
-assert_contains "${out}" '0.2.2' 'installed layout: version works'
+assert_contains "${out}" '0.2.3' 'installed layout: version works'
 
 # ============================================================================
 # 4. CLI exit codes
@@ -777,7 +779,7 @@ echo '--- 23. Full load ---'
 
 out=$(run_proxyctl version)
 assert_eq "$?" '0' 'proxyctl loads without error'
-assert_contains "${out}" '0.2.2' 'proxyctl version reports 0.2.2'
+assert_contains "${out}" '0.2.3' 'proxyctl version reports 0.2.3'
 
 # ============================================================================
 # 24. internal-init with custom paths
@@ -841,7 +843,7 @@ fi
 
 # Verify the entry point checks bash version
 out=$(run_proxyctl version)
-assert_contains "${out}" '0.2.2' 'entry point passes bash version check'
+assert_contains "${out}" '0.2.3' 'entry point passes bash version check'
 
 # ============================================================================
 # 27. apply_candidate detects missing file
@@ -1203,6 +1205,26 @@ assert_ok "run_meta 'network_validate_ip 2001:db8::1'" 'network_validate_ip acce
 assert_ok "run_meta 'port_validate 443'" 'port_validate accepts 443'
 assert_fail "run_meta 'port_validate 0' 2>/dev/null" 'port_validate rejects 0'
 assert_fail "run_meta 'port_validate 65536' 2>/dev/null" 'port_validate rejects 65536'
+
+# ============================================================================
+# 31. Lock contract (light) — full cross-process coverage lives in tests/lock.sh
+# ============================================================================
+echo ''
+echo '--- 31. Lock contract ---'
+
+out=$(run_meta 'lock_path config')
+assert_eq "$?" '0' 'lock_path config exits 0'
+assert_eq "${out}" "${PROXYCTL_LOCK}" 'lock_path config maps to PROXYCTL_LOCK'
+
+out=$(run_meta 'lock_path cert')
+assert_eq "$?" '0' 'lock_path cert exits 0'
+assert_eq "${out}" "${PROXYCTL_CERT_LOCK}" 'lock_path cert maps to PROXYCTL_CERT_LOCK'
+
+out=$(run_meta 'lock_path firewall')
+assert_eq "$?" '0' 'lock_path firewall exits 0'
+assert_eq "${out}" "${PROXYCTL_FIREWALL_LOCK}" 'lock_path firewall maps to PROXYCTL_FIREWALL_LOCK'
+
+assert_fail "run_meta 'lock_path something' 2>/dev/null" 'lock_path rejects unknown name'
 
 # ============================================================================
 # Summary

@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.2.3] — Unreleased
+
+### Added
+
+- `lib/common/lock.sh`: flock-backed process locking with three logical locks
+  (`config`/`cert`/`firewall`) mapped to fixed lock files and fixed fds
+  (200/201/202 — Bash 4.0 compatible, no `exec {fd}>`)
+- public API: `lock_path`, `lock_acquire`, `lock_release`, `lock_is_held`,
+  `with_lock`; internal `lock_fd`, `_lock_require_flock`, `_lock_is_available`
+- non-blocking acquire (`flock -n`) with per-lock busy messages; duplicate
+  acquire and release are idempotent per process
+- `with_lock` passes arguments verbatim (`"$@"`, never eval), preserves the
+  command's exit code, and does not release a lock the caller already held
+- kernel-enforced auto-release on process exit (normal, crash, or SIGKILL);
+  lock files are never deleted and their existence is not a lock
+- `PROXYCTL_CERT_LOCK` and `PROXYCTL_FIREWALL_LOCK` paths (defaults
+  `/run/lock/proxyctl-cert.lock`, `/run/lock/proxyctl-firewall.lock`)
+- per-module suite `tests/lock.sh`: real-flock cross-process coverage
+  (contention, reacquire, independent locks, with_lock ownership, exit/SIGTERM
+  auto-release, unknown-name rejection, fail-closed without flock) using
+  READY/RELEASE markers for deterministic timing
+- smoke test: light `lock_path` contract checks (config/cert/firewall mapping,
+  unknown-name rejection)
+
+### Changed
+
+- version: 0.2.2 → 0.2.3
+- README: process locking moved from Planned to Implemented; lock semantics and
+  the three lock files documented
+
 ## [0.2.2] — Unreleased
 
 ### Added
