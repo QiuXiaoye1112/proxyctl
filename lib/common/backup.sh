@@ -33,7 +33,8 @@ _backup_prepare_root() {
 
 _backup_validate_label() {
     local v="${1:-}"
-    [[ -z "$v" ]] || [[ ${#v} -le 64 && "$v" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+    [[ -z "$v" ]] && return 0
+    [[ ${#v} -le 64 && "$v" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$v" != *'..'* ]]
 }
 
 _backup_validate_id() {
@@ -96,7 +97,7 @@ _backup_copy_state() {
 }
 
 _backup_create_locked() {
-    local label="${1:-}" root stage stamp id tmp
+    local label="${1:-}" root stage stamp id tmp attempt
     _backup_require_root || return 1
     _backup_require_tools || return 1
     _backup_validate_label "$label" || { error "Invalid backup label: ${label}"; return 1; }
@@ -106,7 +107,15 @@ _backup_create_locked() {
     chmod 700 "$stage"
     _backup_copy_state "$stage" || { rm -rf -- "$stage"; return 1; }
     stamp=$(date -u '+%Y%m%d-%H%M%S')
-    id="proxyctl-${stamp}-${RANDOM}${label:+-${label}}.tar.gz"
+    for (( attempt = 0; attempt < 100; attempt++ )); do
+        id="proxyctl-${stamp}-${RANDOM}${label:+-${label}}.tar.gz"
+        [[ ! -e "$root/$id" && ! -L "$root/$id" ]] && break
+    done
+    if (( attempt >= 100 )); then
+        rm -rf -- "$stage"
+        error 'Unable to allocate a unique backup id.'
+        return 1
+    fi
     tmp="$root/.${id}.tmp"
     tar -C "$stage" -czf "$tmp" manifest.json metadata engines certs secrets || { rm -rf -- "$stage"; rm -f -- "$tmp"; return 1; }
     chmod 600 "$tmp" || { rm -rf -- "$stage"; rm -f -- "$tmp"; return 1; }
