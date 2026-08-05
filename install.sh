@@ -230,11 +230,45 @@ final_verify() {
         || die_install 'Installed binary help check failed.'
 }
 
+# warn_install — non-fatal installer warning (best-effort paths only).
+warn_install() {
+    echo "[WARN] $*" >&2
+}
+
+# validate_symlink_path — refuse to overwrite a non-symlink SYMLINK_PATH.
+# Runs before any swap, so a collision aborts without touching the install.
+# Allowed: absent path, a symlink (including a broken one).
+# Rejected: an existing regular file or directory at SYMLINK_PATH.
+validate_symlink_path() {
+    if [[ -e "$SYMLINK_PATH" || -L "$SYMLINK_PATH" ]]; then
+        if [[ ! -L "$SYMLINK_PATH" ]]; then
+            die_install "Refusing to overwrite non-symlink path: $SYMLINK_PATH"
+        fi
+    fi
+}
+
+# cleanup_old_artifacts — best-effort removal of *.old backups.
+# Failure here is NOT a transaction failure: the new install already passed
+# final verification, so leftover backups are garbage collection only.
+cleanup_old_artifacts() {
+    if [[ "${PROXYCTL_TEST_FAIL_CLEANUP:-}" == 'bin' ]]; then
+        warn_install "Injected old binary cleanup failure (test)"
+    elif ! rm -f "$BIN_OLD"; then
+        warn_install "Unable to remove old binary backup: $BIN_OLD"
+    fi
+
+    if [[ "${PROXYCTL_TEST_FAIL_CLEANUP:-}" == 'lib' ]]; then
+        warn_install "Injected old library cleanup failure (test)"
+    elif ! rm -rf "$LIB_OLD"; then
+        warn_install "Unable to remove old library backup: $LIB_OLD"
+    fi
+}
+
 install_commit() {
-    # Only after every check passed do we drop the old backups.
-    rm -f "$BIN_OLD"
-    rm -rf "$LIB_OLD"
+    # The install has already passed final verification. Mark committed BEFORE
+    # any *.old removal so a cleanup failure can never trigger rollback.
     _INSTALL_COMMITTED=1
+    cleanup_old_artifacts
 }
 
 install_rollback() {
@@ -319,6 +353,10 @@ echo '  =================='
 echo ''
 
 capture_existing_state
+
+# Refuse non-symlink collisions before touching anything existing.
+validate_symlink_path
+
 trap _cleanup_on_exit EXIT
 
 echo 'Installing proxyctl library...'

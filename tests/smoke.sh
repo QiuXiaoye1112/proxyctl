@@ -1079,6 +1079,117 @@ else
     assert_absent "${INSTALL_ROOT}/usr/local/lib/proxyctl.new"  'installer success: no library.new'
     assert_absent "${INSTALL_ROOT}/usr/local/lib/proxyctl.old"  'installer success: no library.old'
 
+    # ---- 29e. Cleanup failure must NOT trigger rollback ----------------------
+    # Inject a failure removing *.old: the new install already passed final
+    # verification, so the install must still exit 0 and keep the new artifacts.
+    echo '  29e. Commit cleanup failure does not rollback'
+    rm -rf "$INSTALL_ROOT"
+    mkdir -p "$INSTALL_ROOT"
+    seed_old_install "$INSTALL_ROOT"
+    SEED_BIN_HASH=$(file_hash "${INSTALL_ROOT}/usr/local/sbin/proxyctl")
+
+    set +e
+    out=$(PROXYCTL_INSTALL_ROOT="$INSTALL_ROOT" PROXYCTL_TEST_FAIL_CLEANUP='bin' \
+        bash "${PROJECT_DIR}/install.sh" 2>&1)
+    rc=$?
+    set -e
+    if (( rc == 0 )); then
+        pass 'installer cleanup-fail(bin): installer still exits 0'
+    else
+        fail "installer cleanup-fail(bin): should exit 0 (rc=${rc}): ${out}"
+    fi
+
+    NEW_BIN_HASH=$(file_hash "${INSTALL_ROOT}/usr/local/sbin/proxyctl")
+    if [[ "$NEW_BIN_HASH" != "$SEED_BIN_HASH" ]]; then
+        pass 'installer cleanup-fail(bin): new binary replaced old'
+    else
+        fail 'installer cleanup-fail(bin): binary should be the new one'
+    fi
+    assert_present "${INSTALL_ROOT}/usr/local/lib/proxyctl" 'installer cleanup-fail(bin): new library present'
+
+    # With cleanup failure injected, BIN_OLD may legitimately remain (garbage).
+    assert_present "${INSTALL_ROOT}/usr/local/bin/proxyctl" 'installer cleanup-fail(bin): symlink present'
+
+    set +e
+    out=$(PROXYCTL_INSTALL_ROOT="$INSTALL_ROOT" PROXYCTL_TEST_FAIL_CLEANUP='lib' \
+        bash "${PROJECT_DIR}/install.sh" 2>&1)
+    rc=$?
+    set -e
+    if (( rc == 0 )); then
+        pass 'installer cleanup-fail(lib): installer still exits 0'
+    else
+        fail "installer cleanup-fail(lib): should exit 0 (rc=${rc}): ${out}"
+    fi
+
+    assert_present "${INSTALL_ROOT}/usr/local/sbin/proxyctl" 'installer cleanup-fail(lib): new binary present'
+    assert_present "${INSTALL_ROOT}/usr/local/lib/proxyctl"  'installer cleanup-fail(lib): new library present'
+
+    # ---- 29f. Non-symlink collision is refused before any swap ---------------
+    echo '  29f. Non-symlink collision rejected'
+    rm -rf "$INSTALL_ROOT"
+    mkdir -p "$INSTALL_ROOT"
+    mkdir -p "$(dirname "${INSTALL_ROOT}/usr/local/sbin/proxyctl")"
+    mkdir -p "$(dirname "${INSTALL_ROOT}/usr/local/bin/proxyctl")"
+    printf 'do-not-touch\n' > "${INSTALL_ROOT}/usr/local/bin/proxyctl"
+    COLLIDE_HASH=$(file_hash "${INSTALL_ROOT}/usr/local/bin/proxyctl")
+
+    set +e
+    out=$(run_installer "$INSTALL_ROOT" '' 2>&1)
+    rc=$?
+    set -e
+    if (( rc != 0 )); then
+        pass 'installer collision: non-symlink file is refused'
+    else
+        fail "installer collision: should refuse (rc=${rc}): ${out}"
+    fi
+
+    POST_HASH=$(file_hash "${INSTALL_ROOT}/usr/local/bin/proxyctl")
+    assert_eq "$POST_HASH" "$COLLIDE_HASH" 'installer collision: file untouched'
+    assert_absent "${INSTALL_ROOT}/usr/local/sbin/proxyctl" 'installer collision: binary not installed'
+    assert_absent "${INSTALL_ROOT}/usr/local/lib/proxyctl"  'installer collision: library not installed'
+
+    # ---- 29g. Directory collision is refused ---------------------------------
+    echo '  29g. Directory collision rejected'
+    rm -rf "$INSTALL_ROOT"
+    mkdir -p "$INSTALL_ROOT"
+    mkdir -p "${INSTALL_ROOT}/usr/local/bin/proxyctl"  # directory at symlink path
+
+    set +e
+    out=$(run_installer "$INSTALL_ROOT" '' 2>&1)
+    rc=$?
+    set -e
+    if (( rc != 0 )); then
+        pass 'installer collision: directory is refused'
+    else
+        fail "installer collision: directory should be refused (rc=${rc}): ${out}"
+    fi
+
+    if [[ -d "${INSTALL_ROOT}/usr/local/bin/proxyctl" ]]; then
+        pass 'installer collision: directory left intact'
+    else
+        fail 'installer collision: directory should not be deleted'
+    fi
+
+    # ---- 29h. Broken symlink is allowed and replaced --------------------------
+    echo '  29h. Broken symlink replaced'
+    rm -rf "$INSTALL_ROOT"
+    mkdir -p "$INSTALL_ROOT"
+    mkdir -p "$(dirname "${INSTALL_ROOT}/usr/local/bin/proxyctl")"
+    ln -s "/nonexistent/old-proxyctl" "${INSTALL_ROOT}/usr/local/bin/proxyctl"
+
+    set +e
+    out=$(run_installer "$INSTALL_ROOT" '' 2>&1)
+    rc=$?
+    set -e
+    if (( rc == 0 )); then
+        pass 'installer: broken symlink is replaced'
+    else
+        fail "installer: broken symlink should be replaceable (rc=${rc}): ${out}"
+    fi
+
+    BROKEN_LINK_TARGET=$(readlink "${INSTALL_ROOT}/usr/local/bin/proxyctl")
+    assert_eq "$BROKEN_LINK_TARGET" "${INSTALL_ROOT}/usr/local/sbin/proxyctl" 'installer: broken symlink now points to binary'
+
     rm -rf "$INSTALL_TEST_BASE"
 fi
 

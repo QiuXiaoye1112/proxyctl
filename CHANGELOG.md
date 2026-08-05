@@ -13,6 +13,12 @@
 - rollback failure-injection coverage via `PROXYCTL_TEST_FAIL_AT`
 - transaction root permission invariant: `transaction_begin` enforces mode 700
   independently of the installer
+- installer commit marker is set before best-effort old-backup cleanup
+  (`_INSTALL_COMMITTED=1` precedes any `*.old` removal)
+- old-backup cleanup failure no longer triggers rollback (best-effort warning,
+  install still exits 0)
+- installer refuses to overwrite a non-symlink `/usr/local/bin/proxyctl`
+  (regular file or directory) before any swap; broken symlinks are replaced
 
 ### Changed
 - installer supports test-only `PROXYCTL_INSTALL_ROOT` override (production
