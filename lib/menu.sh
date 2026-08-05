@@ -42,8 +42,11 @@ menu_select_client() {
 menu_select_outbound() {
     local __engine="$1" __tag="$2" engine tag tags=()
     menu_select_engine engine 1 || return 1
-    while IFS= read -r tag; do [[ -n "$tag" ]] && tags+=("$tag"); done < <(outbound_call "$engine" selectable_tags)
-    ((${#tags[@]})) || { warn "${engine} has no managed proxy/local outbounds."; return 1; }
+    while IFS= read -r tag; do
+        [[ -n "$tag" ]] || continue
+        outbound_exists "$engine" "$tag" && tags+=("$tag")
+    done < <(outbound_meta_list_managed "$engine")
+    ((${#tags[@]})) || { warn "${engine} has no ProxyCTL-owned outbounds to delete."; return 1; }
     if ((${#tags[@]} == 1)); then tag=${tags[0]}; else choose tag "Select ${engine} outbound:" "${tags[@]}" || return 1; fi
     printf -v "$__engine" '%s' "$engine"
     printf -v "$__tag" '%s' "$tag"
@@ -165,7 +168,7 @@ menu_outbound() {
     while true; do
         heading 'Outbound Management'
         local choice engine tag inbound answer
-        choose choice 'Outbound Management' 'List / bindings' 'Add outbound' 'Assign inbound' 'Delete outbound' 'Back' || return
+        choose choice 'Outbound Management' 'List / bindings' 'Add outbound' 'Assign inbound' 'Delete ProxyCTL outbound' 'Back' || return
         case "$choice" in
             'List / bindings') menu_action cmd_outbound list ;;
             'Add outbound')
@@ -176,9 +179,9 @@ menu_outbound() {
                 menu_select_inbound engine inbound || { pause; continue; }
                 menu_action outbound_assign_interactive "$engine" "$inbound"
                 ;;
-            'Delete outbound')
+            'Delete ProxyCTL outbound')
                 menu_select_outbound engine tag || { pause; continue; }
-                confirm answer "Delete outbound ${engine}/${tag}? Managed inbound bindings will revert to direct." n || continue
+                confirm answer "Delete ProxyCTL-owned outbound ${engine}/${tag}? Managed inbound bindings will revert to direct." n || continue
                 [[ "$answer" == y ]] && menu_action outbound_delete "$engine" "$tag"
                 ;;
             'Back') return ;;
@@ -280,11 +283,17 @@ menu_backup() {
 }
 
 menu_system() {
-    heading 'System Tools'
-    local choice
-    choose choice 'System Tools' 'Check BBR status' 'Back' || return
-    case "$choice" in
-        'Check BBR status') menu_action bbr_status ;;
-        'Back') return ;;
-    esac
+    while true; do
+        heading 'System Tools'
+        local choice engine
+        choose choice 'System Tools' 'Check BBR status' 'Adopt / reconcile existing configs' 'Back' || return
+        case "$choice" in
+            'Check BBR status') menu_action bbr_status ;;
+            'Adopt / reconcile existing configs')
+                choose engine 'Reconcile which config?' xray singbox both || continue
+                if [[ "$engine" == both ]]; then menu_action proxyctl_reconcile; else menu_action proxyctl_reconcile "$engine"; fi
+                ;;
+            'Back') return ;;
+        esac
+    done
 }
