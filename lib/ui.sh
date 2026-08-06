@@ -127,7 +127,9 @@ choose() {
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     ((_ui_count > 0)) || { error '没有可选项。'; return 1; }
     [[ -t 0 || -n "${PROXYCTL_NO_TTY_GUARD:-}" ]] || { error '交互选择需要在终端中执行。'; return 1; }
+    echo "TRACE2: about to printf prompt to stderr" >> /tmp/pctl2.log
     printf '%s\n' "$_ui_prompt" >&2
+    echo "TRACE2: printf done" >> /tmp/pctl2.log
     for _ui_i in "${!_ui_options[@]}"; do
         _ui_display=$(_ui_translate_option "${_ui_options[$_ui_i]}")
         printf '  %d) %s\n' "$((_ui_i + 1))" "$_ui_display" >&2
