@@ -229,7 +229,23 @@ menu_inbound_manage() {
     while inbound_exists "$engine" "$tag"; do
         ui_clear_screen
         heading "入站管理 · ${engine}/${tag}"
-        printf '1) 分享信息 / 客户端配置\n2) 用户管理\n3) 修改入站信息\n4) 设置出站\n5) 查看 JSON\n6) 重命名入站\n7) 删除入站\n0) 返回列表\n'
+        config=$(inbound_config_file "$engine" 2>/dev/null || true)
+        if [[ -n "$config" ]]; then
+            local _proto=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.protocol // .type // "-"' "$config" 2>/dev/null || true)
+            local _port=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.port // .listen_port // "-")|tostring' "$config" 2>/dev/null || true)
+            local _listen=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen // "0.0.0.0"' "$config" 2>/dev/null || true)
+            local _transport=''
+            local _security=''
+            if [[ "$engine" == xray ]]; then
+                _transport=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.network // .streamSettings.method // "-"' "$config" 2>/dev/null || true)
+                _security=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.security // "none"' "$config" 2>/dev/null || true)
+            else
+                _transport=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.transport.type // "-"' "$config" 2>/dev/null || true)
+                _security=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(if .tls.reality.enabled==true then "reality" elif .tls.enabled==true then "tls" else "none" end)' "$config" 2>/dev/null || true)
+            fi
+            printf '协议: %s  |  端口: %s  |  传输: %s  |  安全: %s  |  监听: %s\n' "$_proto" "$_port" "$_transport" "$_security" "$_listen"
+        fi
+        printf '\n1) 分享信息 / 客户端配置\n2) 用户管理\n3) 修改入站信息\n4) 设置出站\n5) 查看 JSON\n6) 重命名入站\n7) 删除入站\n0) 返回列表\n'
         choice=''
         menu_read_choice choice || return
         case "$choice" in

@@ -209,6 +209,7 @@ engine_xray_inbound_list() {
     config=$(engine_xray_config_file)
     jq -r '.inbounds[]? | [.tag,.protocol,(.listen // "0.0.0.0"),(.port|tostring),(.streamSettings.network // .streamSettings.method // "-"),(.streamSettings.security // "none"),(((.settings.clients // .settings.accounts // .settings.users // [])|length)|tostring)] | @tsv' "$config" \
       | awk -F'\t' 'BEGIN{printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n","名称","协议","监听地址","端口","传输","安全","用户数"} {printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n",$1,$2,$3,$4,$5,$6,$7}'
+    printf '\n配置文件: %s\n' "$config"
 }
 
 _xray_client_protocol() { jq -r --arg tag "$2" '.inbounds[]|select(.tag==$tag)|.protocol' "$1"; }

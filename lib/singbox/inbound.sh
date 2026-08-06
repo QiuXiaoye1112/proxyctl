@@ -71,9 +71,6 @@ engine_singbox_inbound_collect_spec() {
         port_validate "$port" || { error 'Port must be 1-65535.'; return 1; }
     fi
 
-    default_host=$(network_public_ipv4 2>/dev/null || network_public_ipv6 2>/dev/null || true)
-    prompt_value client_host 'Client/server address' "${default_host:-127.0.0.1}" || return 1
-    network_validate_host "$client_host" || { error 'Client address must be an IP or domain.'; return 1; }
 
     case "$protocol" in
         AnyTLS|VLESS|Trojan) choose security 'TLS security:' reality tls || return 1 ;;
@@ -102,6 +99,14 @@ engine_singbox_inbound_collect_spec() {
         IFS=$'\t' read -r private public <<<"$pair"
         sid=$(inbound_random_hex 4)
     fi
+
+    # Client address: auto-fill from TLS SNI when available
+    default_host=$(network_public_ipv4 2>/dev/null || network_public_ipv6 2>/dev/null || true)
+    if [[ "$security" == tls && -n "$sni" ]]; then
+        default_host="$sni"
+    fi
+    prompt_value client_host 'Client/server address' "${default_host:-127.0.0.1}" || return 1
+    network_validate_host "$client_host" || { error 'Client address must be an IP or domain.'; return 1; }
 
     case "$protocol" in
         VLESS)
@@ -211,6 +216,7 @@ engine_singbox_inbound_list() {
     local config
     config=$(engine_singbox_config_file)
     jq -r '.inbounds[]? | [.tag,.type,(.listen // "0.0.0.0"),(.listen_port|tostring),(.transport.type // "-"),(if .tls.reality.enabled==true then "reality" elif .tls.enabled==true then "tls" else "none" end),(((.users // [])|length)|tostring)] | @tsv' "$config" | awk -F'\t' 'BEGIN{printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n","名称","协议","监听地址","端口","传输","安全","用户数"} {printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n",$1,$2,$3,$4,$5,$6,$7}'
+    printf '\n配置文件: %s\n' "$config"
 }
 
 _singbox_type() { jq -r --arg tag "$2" '.inbounds[]|select(.tag==$tag)|.type' "$1"; }
