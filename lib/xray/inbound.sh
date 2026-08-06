@@ -315,7 +315,7 @@ engine_xray_inbound_share() {
             while IFS=$'\t' read -r label credential; do
                 [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
                 flow=''; [[ "$protocol" != vless ]] || flow=$(jq -r --arg tag "$tag" --arg lbl "$label" '.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$lbl)|.flow // empty' "$config")
-                printf '----------------------------------------\n'
+                echo '----------------------------------------'
                 printf '用户: %s\n' "$label"
                 if [[ "$protocol" == vless ]]; then printf 'UUID: %s\n' "$credential"; else printf '密码: %s\n' "$credential"; fi
                 if [[ -n "$flow" ]]; then
@@ -324,34 +324,34 @@ engine_xray_inbound_share() {
                     printf '%s://%s@%s:%s?%s#%s\n' "$protocol" "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "${tag}-${label}")"
                 fi
             done < <(engine_xray_inbound_clients "$tag")
-            printf '----------------------------------------\n'
+            echo '----------------------------------------'
             ;;
         vmess)
             path=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.streamSettings.wsSettings.path // "/")' "$config"); sni=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.tlsSettings.serverName // empty' "$config")
             while IFS=$'\t' read -r label credential; do
                 [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
                 vmess_json=$(jq -cn --arg ps "${tag}-${label}" --arg add "$host" --arg port "$port" --arg id "$credential" --arg net "$type" --arg path "$path" --arg tls "$security" --arg sni "$sni" '{v:"2",ps:$ps,add:$add,port:$port,id:$id,aid:"0",scy:"auto",net:$net,type:"none",host:$sni,path:$path,tls:(if $tls=="tls" then "tls" else "" end),sni:$sni,alpn:""}')
-                printf '----------------------------------------\n'
+                echo '----------------------------------------'
                 printf '用户: %s\nUUID: %s\n' "$label" "$credential"
                 printf 'vmess://%s\n' "$(printf '%s' "$vmess_json" | _xray_base64)"
             done < <(engine_xray_inbound_clients "$tag")
-            printf '----------------------------------------\n'
+            echo '----------------------------------------'
             ;;
         socks|http)
             count=$(jq --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.settings.accounts // .settings.users // [])|length' "$config")
             scheme=$([[ "$protocol" == socks ]] && printf socks5 || printf http)
             if (( count == 0 )); then
-                printf '----------------------------------------\n'
+                echo '----------------------------------------'
                 printf '%s://%s:%s\n' "$scheme" "$uri_host" "$port"
-                printf '----------------------------------------\n'
+                echo '----------------------------------------'
             else
                 while IFS=$'\t' read -r label credential; do
                     [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
-                    printf '----------------------------------------\n'
+                    echo '----------------------------------------'
                     printf '用户: %s\n密码: %s\n' "$label" "$credential"
                     printf '%s://%s:%s@%s:%s\n' "$scheme" "$(_xray_uri_encode "$label")" "$(_xray_uri_encode "$credential")" "$uri_host" "$port"
                 done < <(engine_xray_inbound_clients "$tag")
-                printf '----------------------------------------\n'
+                echo '----------------------------------------'
             fi
             ;;
     esac
