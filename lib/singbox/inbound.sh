@@ -210,7 +210,7 @@ engine_singbox_inbound_build_from_spec() {
 engine_singbox_inbound_list() {
     local config
     config=$(engine_singbox_config_file)
-    jq -r '.inbounds[]? | [.tag,.type,(.listen // "0.0.0.0"),(.listen_port|tostring),(.transport.type // "-"),(if .tls.reality.enabled==true then "reality" elif .tls.enabled==true then "tls" else "none" end),(((.users // [])|length)|tostring)] | @tsv' "$config" | awk -F'\t' 'BEGIN{printf "%-24s %-10s %-18s %-7s %-10s %-9s %s\n","TAG","PROTO","LISTEN","PORT","TRANSPORT","SECURITY","USERS"} {printf "%-24s %-10s %-18s %-7s %-10s %-9s %s\n",$1,$2,$3,$4,$5,$6,$7}'
+    jq -r '.inbounds[]? | [.tag,.type,(.listen // "0.0.0.0"),(.listen_port|tostring),(.transport.type // "-"),(if .tls.reality.enabled==true then "reality" elif .tls.enabled==true then "tls" else "none" end),(((.users // [])|length)|tostring)] | @tsv' "$config" | awk -F'\t' 'BEGIN{printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n","名称","协议","监听地址","端口","传输","安全","用户数"} {printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n",$1,$2,$3,$4,$5,$6,$7}'
 }
 
 _singbox_type() { jq -r --arg tag "$2" '.inbounds[]|select(.tag==$tag)|.type' "$1"; }

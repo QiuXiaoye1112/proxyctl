@@ -95,7 +95,7 @@ engine_singbox_outbound_list() {
       [$tag, ([$rules[]? | select(.action=="route" and (.inbound // [])==[$tag] and
         ((keys_unsorted|sort)==(["action","inbound","outbound"]|sort))) | .outbound][0] // (.route.final // "direct"))] | @tsv' "$config" |
       while IFS=$'\t' read -r inbound outbound; do printf '%-24s %-24s\n' "$inbound" "$outbound"; done
-    printf '\n%-24s %-9s %-28s %s\n' 'TAG' 'TYPE' 'SERVER/BIND' 'AUTH'
+    printf '\n%-24s %-8s %-28s %s\n' '名称' '类型' '服务器/绑定' '认证'
     jq -r '.outbounds[]? |
       select(.tag!="direct" and (.type=="socks" or .type=="http" or .type=="direct")) |
       if .type=="direct" then [.tag,"local",(.inet4_bind_address // .inet6_bind_address // "default"),"-"]

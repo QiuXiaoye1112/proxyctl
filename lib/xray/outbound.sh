@@ -90,7 +90,7 @@ engine_xray_outbound_list() {
       .inbounds[]? | .tag as $tag |
       [$tag, ([$rules[]? | select((.ruleTag // "")==("proxyctl-outbound:"+$tag)) | .outboundTag][0] // "direct")] | @tsv' "$config" |
       while IFS=$'\t' read -r inbound outbound; do printf '%-24s %-24s\n' "$inbound" "$outbound"; done
-    printf '\n%-24s %-9s %-28s %s\n' 'TAG' 'TYPE' 'SERVER/BIND' 'AUTH'
+    printf '\n%-24s %-8s %-28s %s\n' '名称' '类型' '服务器/绑定' '认证'
     jq -r '.outbounds[]? |
       select(.tag!="direct" and .tag!="blocked" and (.protocol=="socks" or .protocol=="http" or .protocol=="freedom")) |
       if .protocol=="freedom" then [.tag,"local",(.sendThrough // "default"),"-"]

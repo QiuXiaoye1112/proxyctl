@@ -119,7 +119,7 @@ cmd_core() {
 cmd_inbound() {
     local action="${1:-list}" engine="${2:-}" answer
     case "$action" in
-        list) if [[ -n "$engine" ]]; then inbound_list "$engine"; else for engine in xray singbox; do echo ''; heading "${engine} inbounds"; if engine_call "$engine" installed >/dev/null 2>&1; then inbound_list "$engine"; else info 'Core not installed.'; fi; done; fi ;;
+        list) if [[ -n "$engine" ]]; then inbound_list "$engine"; else for engine in xray singbox; do echo ''; heading "${engine} 入站"; if engine_call "$engine" installed >/dev/null 2>&1; then inbound_list "$engine"; else info 'Core not installed.'; fi; done; fi ;;
         add) [[ -n "$engine" ]] || { error 'Usage: proxyctl inbound add <xray|singbox> [--json SPEC]'; return 1; }; if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; inbound_add_from_spec "$engine" "$4"; else inbound_add_interactive "$engine"; fi ;;
         show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl inbound show <engine> <tag>'; return 1; }; inbound_show "$engine" "$3" ;;
         modify) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" && -n "${5:-}" ]] || { error 'Usage: proxyctl inbound modify <engine> <tag> <listen-ip> <port> [client-host]'; return 1; }; inbound_modify_listen "$engine" "$3" "$4" "$5" "${6:-}" ;;
@@ -132,7 +132,7 @@ cmd_inbound() {
 cmd_outbound() {
     local action="${1:-list}" engine="${2:-}" answer
     case "$action" in
-        list) if [[ -n "$engine" ]]; then outbound_list "$engine"; else for engine in xray singbox; do echo ''; heading "${engine} outbounds"; if engine_call "$engine" installed >/dev/null 2>&1; then outbound_list "$engine"; else info 'Core not installed.'; fi; done; fi ;;
+        list) if [[ -n "$engine" ]]; then outbound_list "$engine"; else for engine in xray singbox; do echo ''; heading "${engine} 出站"; if engine_call "$engine" installed >/dev/null 2>&1; then outbound_list "$engine"; else info 'Core not installed.'; fi; done; fi ;;
         add) [[ -n "$engine" ]] || { error 'Usage: proxyctl outbound add <xray|singbox> [--json SPEC]'; return 1; }; if [[ "${3:-}" == --json ]]; then [[ -n "${4:-}" ]] || { error 'Missing JSON spec.'; return 1; }; outbound_add_from_spec "$engine" "$4"; else outbound_add_interactive "$engine"; fi ;;
         show) [[ -n "$engine" && -n "${3:-}" ]] || { error 'Usage: proxyctl outbound show <engine> <tag>'; return 1; }; outbound_show "$engine" "$3" ;;
         assign) [[ -n "$engine" && -n "${3:-}" && -n "${4:-}" ]] || { error 'Usage: proxyctl outbound assign <engine> <inbound> <outbound|direct>'; return 1; }; outbound_assign "$engine" "$3" "$4" ;;
