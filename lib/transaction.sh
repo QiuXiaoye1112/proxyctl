@@ -335,7 +335,7 @@ _apply_candidate_locked() {
 
     tx_id=$(transaction_begin "${engine}-apply") || return 1
     tx_dir=$(transaction_dir "$tx_id")
-    snapshot="${tx_dir}/candidate"
+    snapshot="${tx_dir}/candidate.json"
 
     # Snapshot first. From this point on the original candidate is never read
     # again: validation and installation both consume this exact file.
