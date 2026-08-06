@@ -258,10 +258,6 @@ _inbound_add_from_spec_locked() {
 
     rm -f -- "$config_snapshot" "$meta_snapshot"
     info "Inbound created: ${engine}/${tag}"
-    echo ''
-    heading '入站配置 JSON'
-    inbound_show "$engine" "$tag" || true
-    echo ''
     inbound_share "$engine" "$tag" || true
 }
 
