@@ -113,8 +113,8 @@ confirm() {
     local __var="$1" _ui_prompt="${2:-确定继续吗？}" _ui_default="${3:-n}" _ui_answer='' _ui_suffix
     [[ "$_ui_default" == y ]] && _ui_suffix='[Y/n]' || _ui_suffix='[y/N]'
     if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then error '交互确认需要在终端中执行。'; return 1; fi
-    printf '%s %s ' "$_ui_prompt" "$_ui_suffix" >&2
-    read -r _ui_answer || { printf '\n' >&2; _ui_answer="$_ui_default"; }
+    printf '%s %s ' "$_ui_prompt" "$_ui_suffix"
+    read -r _ui_answer || { printf '\n'; _ui_answer="$_ui_default"; }
     _ui_answer="${_ui_answer:-$_ui_default}"
     case "${_ui_answer,,}" in y|yes|是|好|确认) printf -v "$__var" '%s' y ;; *) printf -v "$__var" '%s' n ;; esac
 }
