@@ -262,7 +262,6 @@ _inbound_add_from_spec_locked() {
     heading '入站配置 JSON'
     inbound_show "$engine" "$tag" || true
     echo ''
-    heading '分享信息'
     inbound_share "$engine" "$tag" || true
 }
 

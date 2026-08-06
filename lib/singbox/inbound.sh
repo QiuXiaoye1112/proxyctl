@@ -284,24 +284,18 @@ engine_singbox_inbound_share() {
             while IFS=$'\t' read -r name credential; do
                 [[ -z "$wanted" || "$wanted" == "$name" ]] || continue
                 flow=''; [[ "$type" != vless ]] || flow=$(jq -r --arg tag "$tag" --arg name "$name" '.inbounds[]|select(.tag==$tag)|.users[]|select(.name==$name)|.flow // empty' "$config")
-                echo '----------------------------------------'
-                printf '用户: %s\n' "$name"
-                if [[ "$type" == vless ]]; then printf 'UUID: %s\n' "$credential"; else printf '密码: %s\n' "$credential"; fi
                 if [[ "$type" == vless ]]; then
                     printf 'vless://%s@%s:%s?%s%s#%s\n' "$credential" "$uri_host" "$port" "$query" "$([[ -n "$flow" ]] && printf '&flow=%s' "$(_singbox_uri_encode "$flow")")" "$(_singbox_uri_encode "${tag}-${name}")"
                 else
                     printf 'trojan://%s@%s:%s?%s#%s\n' "$(_singbox_uri_encode "$credential")" "$uri_host" "$port" "$query" "$(_singbox_uri_encode "${tag}-${name}")"
                 fi
             done < <(engine_singbox_inbound_clients "$tag")
-            echo '----------------------------------------'
             ;;
         hysteria2)
             obfs=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.obfs.type // empty' "$config"); obfs_password=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.obfs.password // empty' "$config")
             while IFS=$'\t' read -r name credential; do
                 [[ -z "$wanted" || "$wanted" == "$name" ]] || continue
                 query="sni=$(_singbox_uri_encode "$sni")"; [[ -z "$obfs" ]] || query+="&obfs=$(_singbox_uri_encode "$obfs")&obfs-password=$(_singbox_uri_encode "$obfs_password")"
-                echo '----------------------------------------'
-                printf '用户: %s\n密码: %s\n' "$name" "$credential"
                 printf 'hysteria2://%s@%s:%s?%s#%s\n' "$(_singbox_uri_encode "$credential")" "$uri_host" "$share_port" "$query" "$(_singbox_uri_encode "${tag}-${name}")"
             done < <(engine_singbox_inbound_clients "$tag")
             echo '----------------------------------------'
@@ -309,8 +303,6 @@ engine_singbox_inbound_share() {
         anytls)
             while IFS=$'\t' read -r name credential; do
                 [[ -z "$wanted" || "$wanted" == "$name" ]] || continue
-                echo '----------------------------------------'
-                printf '用户: %s\n密码: %s\n' "$name" "$credential"
                 if [[ "$security" == reality ]]; then
                     json=$(jq -cn --arg server "$host" --argjson port "$port" --arg password "$credential" --arg sni "$sni" --arg public "$public" --arg sid "$sid" '{type:"anytls",server:$server,server_port:$port,password:$password,tls:{enabled:true,server_name:$sni,reality:{enabled:true,public_key:$public,short_id:$sid}}}')
                     printf '%s\n' "$json"
@@ -318,21 +310,15 @@ engine_singbox_inbound_share() {
                     printf 'anytls://%s@%s:%s/?sni=%s#%s\n' "$(_singbox_uri_encode "$credential")" "$uri_host" "$port" "$(_singbox_uri_encode "$sni")" "$(_singbox_uri_encode "${tag}-${name}")"
                 fi
             done < <(engine_singbox_inbound_clients "$tag")
-            echo '----------------------------------------'
             ;;
         socks|http)
             if [[ $(jq --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.users|length' "$config") == 0 ]]; then
-                echo '----------------------------------------'
                 printf '%s://%s:%s\n' "$type" "$uri_host" "$port"
-                echo '----------------------------------------'
             else
                 while IFS=$'\t' read -r name credential; do
                     [[ -z "$wanted" || "$wanted" == "$name" ]] || continue
-                    echo '----------------------------------------'
-                    printf '用户: %s\n密码: %s\n' "$name" "$credential"
                     printf '%s://%s:%s@%s:%s#%s\n' "$type" "$(_singbox_uri_encode "$name")" "$(_singbox_uri_encode "$credential")" "$uri_host" "$port" "$(_singbox_uri_encode "${tag}-${name}")"
                 done < <(engine_singbox_inbound_clients "$tag")
-                echo '----------------------------------------'
             fi
             ;;
     esac
