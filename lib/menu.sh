@@ -177,6 +177,7 @@ menu_print_all_shares() {
 }
 
 menu_main() {
+    set +e  # interactive menu must not exit on minor failures
     local choice=''
     while true; do
         ui_clear_screen
