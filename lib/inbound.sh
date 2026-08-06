@@ -258,6 +258,8 @@ _inbound_add_from_spec_locked() {
 
     rm -f -- "$config_snapshot" "$meta_snapshot"
     info "Inbound created: ${engine}/${tag}"
+    echo ''
+    inbound_share "$engine" "$tag" || true
 }
 
 inbound_add_from_spec() {

@@ -96,12 +96,7 @@ ui_clear_screen() { clear 2>/dev/null || printf '\033[2J\033[H' 2>/dev/null || t
 heading() { printf '\n%s%s%s\n' "${COLOR_BOLD}${COLOR_CYAN}" "$1" "$COLOR_RESET"; }
 
 info() {
-    local text="$1"
-    if _ui_inside_data_collector; then
-        printf '%s[信息]%s %s\n' "$COLOR_GREEN" "$COLOR_RESET" "$text" >&2
-    else
-        printf '%s[信息]%s %s\n' "$COLOR_GREEN" "$COLOR_RESET" "$text"
-    fi
+    printf '%s[信息]%s %s\n' "$COLOR_GREEN" "$COLOR_RESET" "$1" >&2
 }
 warn() { printf '%s[警告]%s %s\n' "$COLOR_YELLOW" "$COLOR_RESET" "$1" >&2; }
 error() { printf '%s[错误]%s %s\n' "$COLOR_RED" "$COLOR_RESET" "$1" >&2; }
