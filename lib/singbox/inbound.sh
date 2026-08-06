@@ -89,10 +89,11 @@ engine_singbox_inbound_collect_spec() {
         prompt_value sni 'TLS SNI/serverName' "$sni" || return 1
         network_validate_host "$sni" || { error 'Invalid TLS SNI.'; return 1; }
     elif [[ "$security" == reality ]]; then
-        prompt_value target 'REALITY handshake domain' 'www.microsoft.com' || return 1
-        network_validate_domain "$target" || { error 'REALITY handshake target must be a domain.'; return 1; }
-        prompt_value target_port 'REALITY handshake port' '443' || return 1
-        port_validate "$target_port" || return 1
+        prompt_value target 'REALITY target (host:port)' 'www.microsoft.com:443' || return 1
+        [[ "$target" == *:* ]] || { error 'REALITY target must be host:port.'; return 1; }
+        target_port="${target##*:}"
+        port_validate "$target_port" || { error 'Invalid REALITY target port.'; return 1; }
+        target="${target%%:*}"
         prompt_value sni 'REALITY serverName/SNI' "$target" || return 1
         network_validate_domain "$sni" || return 1
         pair=$(_singbox_generate_reality) || return 1
