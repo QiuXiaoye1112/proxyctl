@@ -46,9 +46,6 @@ engine_xray_inbound_collect_spec() {
     network_validate_ip "$listen" || { error 'Listen address must be an IPv4/IPv6 address.'; return 1; }
     prompt_value port 'Listen port' '443' || return 1
     port_validate "$port" || { error 'Port must be 1-65535.'; return 1; }
-    default_host=$(network_public_ipv4 2>/dev/null || network_public_ipv6 2>/dev/null || true)
-    prompt_value client_host 'Client/server address' "${default_host:-127.0.0.1}" || return 1
-    network_validate_host "$client_host" || { error 'Client address must be an IP or domain.'; return 1; }
 
     case "$protocol" in
         VLESS) choose security 'Transport security:' reality tls none || return 1 ;;
@@ -89,6 +86,14 @@ engine_xray_inbound_collect_spec() {
     elif [[ "$security" == none && ( "$protocol" == VLESS || "$protocol" == Trojan ) ]]; then
         warn "${protocol} without TLS/REALITY should only be used on trusted private networks."
     fi
+
+    # Client address: auto-fill from TLS SNI when available
+    default_host=$(network_public_ipv4 2>/dev/null || network_public_ipv6 2>/dev/null || true)
+    if [[ "$security" == tls && -n "$sni" ]]; then
+        default_host="$sni"
+    fi
+    prompt_value client_host 'Client/server address' "${default_host:-127.0.0.1}" || return 1
+    network_validate_host "$client_host" || { error 'Client address must be an IP or domain.'; return 1; }
 
     case "$protocol" in
         VLESS|VMess|Trojan)
@@ -309,31 +314,43 @@ engine_xray_inbound_share() {
             while IFS=$'\t' read -r label credential; do
                 [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
                 flow=''; [[ "$protocol" != vless ]] || flow=$(jq -r --arg tag "$tag" --arg lbl "$label" '.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$lbl)|.flow // empty' "$config")
+                printf '----------------------------------------\n'
+                printf '用户: %s\n' "$label"
+                if [[ "$protocol" == vless ]]; then printf 'UUID: %s\n' "$credential"; else printf '密码: %s\n' "$credential"; fi
                 if [[ -n "$flow" ]]; then
                     printf 'vless://%s@%s:%s?%s&flow=%s#%s\n' "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "$flow")" "$(_xray_uri_encode "${tag}-${label}")"
                 else
                     printf '%s://%s@%s:%s?%s#%s\n' "$protocol" "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "${tag}-${label}")"
                 fi
             done < <(engine_xray_inbound_clients "$tag")
+            printf '----------------------------------------\n'
             ;;
         vmess)
             path=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.streamSettings.wsSettings.path // "/")' "$config"); sni=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.tlsSettings.serverName // empty' "$config")
             while IFS=$'\t' read -r label credential; do
                 [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
                 vmess_json=$(jq -cn --arg ps "${tag}-${label}" --arg add "$host" --arg port "$port" --arg id "$credential" --arg net "$type" --arg path "$path" --arg tls "$security" --arg sni "$sni" '{v:"2",ps:$ps,add:$add,port:$port,id:$id,aid:"0",scy:"auto",net:$net,type:"none",host:$sni,path:$path,tls:(if $tls=="tls" then "tls" else "" end),sni:$sni,alpn:""}')
+                printf '----------------------------------------\n'
+                printf '用户: %s\nUUID: %s\n' "$label" "$credential"
                 printf 'vmess://%s\n' "$(printf '%s' "$vmess_json" | _xray_base64)"
             done < <(engine_xray_inbound_clients "$tag")
+            printf '----------------------------------------\n'
             ;;
         socks|http)
             count=$(jq --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.settings.accounts // .settings.users // [])|length' "$config")
             scheme=$([[ "$protocol" == socks ]] && printf socks5 || printf http)
             if (( count == 0 )); then
+                printf '----------------------------------------\n'
                 printf '%s://%s:%s\n' "$scheme" "$uri_host" "$port"
+                printf '----------------------------------------\n'
             else
                 while IFS=$'\t' read -r label credential; do
                     [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
+                    printf '----------------------------------------\n'
+                    printf '用户: %s\n密码: %s\n' "$label" "$credential"
                     printf '%s://%s:%s@%s:%s\n' "$scheme" "$(_xray_uri_encode "$label")" "$(_xray_uri_encode "$credential")" "$uri_host" "$port"
                 done < <(engine_xray_inbound_clients "$tag")
+                printf '----------------------------------------\n'
             fi
             ;;
     esac

@@ -267,7 +267,13 @@ menu_clients() {
     while true; do
         ui_clear_screen
         heading "用户管理 · ${engine}/${tag}"
-        inbound_clients "$engine" "$tag" || true
+        printf '%-5s %-16s %s\n' '序号' '用户' '凭据'
+        local _idx=0
+        while IFS=$'\t' read -r label credential; do
+            [[ -n "$label" ]] || continue
+            ((_idx++))
+            printf '%-5s %-16s %s\n' "$_idx" "$label" "$credential"
+        done < <(inbound_clients "$engine" "$tag" 2>/dev/null || true)
         printf '\n1) 添加用户\n2) 重命名用户\n3) 更换凭据\n4) 删除用户\n0) 返回\n'
         choice=''; user=''; label=''; new_name=''; answer=''
         menu_read_choice choice || return
