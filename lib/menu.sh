@@ -6,7 +6,6 @@
 
 menu_read_choice() {
     local __out_var="$1" _menu_value=''
-    stty sane 2>/dev/null || true
     printf '请选择: '
     read -r _menu_value || { printf '\n'; return 1; }
     printf -v "$__out_var" '%s' "$_menu_value"
@@ -33,15 +32,17 @@ menu_engine_action() {
 menu_select_engine() {
     local __out_var="$1" _ms_installed_only="${2:-0}" _ms_engine='' _ms_seen=''
     local _ms_options=()
+    echo "TRACE: menu_select_engine entry" >> /tmp/pctl.log
     for _ms_engine in xray singbox; do
         engine_exists "$_ms_engine" || continue
         if [[ "$_ms_installed_only" == 1 ]] && ! engine_call "$_ms_engine" installed >/dev/null 2>&1; then continue; fi
         _ms_options+=("$_ms_engine")
         _ms_seen+=" ${_ms_engine} "
     done
+    echo "TRACE: options count=${#_ms_options[@]}" >> /tmp/pctl.log
     # Read from engine_list safely without process substitution
     local _el_output
-    _el_output=$(engine_list) || true
+    _el_output=$(engine_list) || { echo "TRACE: engine_list failed" >> /tmp/pctl.log; true; }
     while IFS= read -r _ms_engine; do
         [[ -n "$_ms_engine" ]] || continue
         if [[ "$_ms_seen" == *" ${_ms_engine} "* ]]; then continue; fi
@@ -49,7 +50,9 @@ menu_select_engine() {
         _ms_options+=("$_ms_engine")
     done <<< "$_el_output"
     ((${#_ms_options[@]})) || { warn '没有可用的核心。'; return 1; }
-    if ((${#_ms_options[@]} == 1)); then printf -v "$__out_var" '%s' "${_ms_options[0]}"; else choose "$__out_var" '选择核心' "${_ms_options[@]}"; fi
+    echo "TRACE: about to choose, options=${_ms_options[*]}" >> /tmp/pctl.log
+    if ((${#_ms_options[@]} == 1)); then printf -v "$__out_var" '%s' "${_ms_options[0]}"; echo "TRACE: auto-selected $_ms_engine" >> /tmp/pctl.log; else choose "$__out_var" '选择核心' "${_ms_options[@]}" || { echo "TRACE: choose failed" >> /tmp/pctl.log; return 1; }; fi
+    echo "TRACE: menu_select_engine done, result=${!__out_var}" >> /tmp/pctl.log
 }
 
 menu_select_inbound() {
@@ -214,14 +217,17 @@ menu_main() {
 menu_inbound() {
     local choice='' engine='' tag='' answer=''
     while true; do
+        echo "TRACE: menu_inbound loop top" >> /tmp/pctl.log
         ui_clear_screen
         heading '入站管理'
         cmd_inbound list || true
         printf '\n1) 新增入站\n2) 管理已有入站\n3) 全部分享信息\n4) 删除入站\n0) 返回\n'
         choice=''; engine=''; tag=''; answer=''
-        menu_read_choice choice || return
+        echo "TRACE: before menu_read_choice" >> /tmp/pctl.log
+        menu_read_choice choice || { echo "TRACE: menu_read_choice failed" >> /tmp/pctl.log; return; }
+        echo "TRACE: choice=$choice" >> /tmp/pctl.log
         case "$choice" in
-            1) menu_select_engine engine 1 || { pause; continue; }; menu_action inbound_add_interactive "$engine" ;;
+            1) echo "TRACE: calling menu_select_engine" >> /tmp/pctl.log; menu_select_engine engine 1 || { echo "TRACE: engine select failed" >> /tmp/pctl.log; pause; continue; }; echo "TRACE: engine=$engine" >> /tmp/pctl.log; menu_action inbound_add_interactive "$engine" ;;
             2) menu_select_inbound engine tag || { pause; continue; }; menu_inbound_manage "$engine" "$tag" ;;
             3) menu_action menu_print_all_shares ;;
             4)
