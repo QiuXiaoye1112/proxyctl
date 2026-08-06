@@ -132,10 +132,13 @@ engine_xray_inbound_build_from_spec() {
     if [[ "$protocol" == trojan && "$method" == xhttp ]]; then error 'Trojan XHTTP is outside ProxyCTL V1 capability scope.'; return 1; fi
     if [[ "$security" == reality && "$method" == websocket ]]; then error 'REALITY cannot be combined with WebSocket.'; return 1; fi
 
+    # Map internal transport names to Xray network values (raw→tcp, websocket→ws)
+    case "$method" in raw) xray_network=tcp ;; websocket) xray_network=ws ;; *) xray_network="$method" ;; esac
+
     if [[ -n "$method" ]]; then
-        stream=$(jq -n --arg method "$method" --arg security "$security" '{method:$method,security:$security}')
+        stream=$(jq -n --arg network "$xray_network" --arg security "$security" '{network:$network,security:$security}')
         case "$method" in
-            raw) stream=$(jq '. + {rawSettings:{acceptProxyProtocol:false,header:{type:"none"}}}' <<<"$stream") ;;
+            raw) stream=$(jq '. + {tcpSettings:{acceptProxyProtocol:false,header:{type:"none"}}}' <<<"$stream") ;;
             xhttp) inbound_validate_path "$path" || { error 'Invalid XHTTP path.'; return 1; }; stream=$(jq --arg path "$path" '. + {xhttpSettings:{path:$path,mode:"auto"}}' <<<"$stream") ;;
             websocket) inbound_validate_path "$path" || { error 'Invalid WebSocket path.'; return 1; }; stream=$(jq --arg path "$path" '. + {wsSettings:{path:$path,acceptProxyProtocol:false}}' <<<"$stream") ;;
         esac
@@ -199,7 +202,7 @@ engine_xray_inbound_build_from_spec() {
 engine_xray_inbound_list() {
     local config
     config=$(engine_xray_config_file)
-    jq -r '.inbounds[]? | [.tag,.protocol,(.listen // "0.0.0.0"),(.port|tostring),(.streamSettings.method // "-"),(.streamSettings.security // "none"),(((.settings.clients // .settings.accounts // .settings.users // [])|length)|tostring)] | @tsv' "$config" \
+    jq -r '.inbounds[]? | [.tag,.protocol,(.listen // "0.0.0.0"),(.port|tostring),(.streamSettings.network // .streamSettings.method // "-"),(.streamSettings.security // "none"),(((.settings.clients // .settings.accounts // .settings.users // [])|length)|tostring)] | @tsv' "$config" \
       | awk -F'\t' 'BEGIN{printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n","名称","协议","监听地址","端口","传输","安全","用户数"} {printf "%-24s %-8s %-18s %-7s %-10s %-9s %s\n",$1,$2,$3,$4,$5,$6,$7}'
 }
 
@@ -232,9 +235,9 @@ engine_xray_inbound_client_add() {
     case "$protocol" in
         vless)
             [[ -n "$credential" ]] || credential=$(inbound_generate_uuid)
-            method=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.method // "raw"' "$config")
+            method=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.network // .streamSettings.method // "tcp"' "$config")
             security=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.security // "none"' "$config")
-            [[ "$method" == raw && "$security" != none ]] && flow=xtls-rprx-vision
+            [[ "$method" == tcp && "$security" != none ]] && flow=xtls-rprx-vision
             user=$(jq -n --arg id "$credential" --arg email "$label" --arg flow "$flow" '{id:$id,email:$email,level:0}+(if $flow!="" then {flow:$flow} else {} end)') ;;
         vmess) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); user=$(jq -n --arg id "$credential" --arg email "$label" '{id:$id,alterId:0,email:$email,level:0}') ;;
         trojan) [[ -n "$credential" ]] || credential=$(inbound_random_password); user=$(jq -n --arg password "$credential" --arg email "$label" '{password:$password,email:$email,level:0}') ;;
@@ -290,10 +293,10 @@ engine_xray_inbound_share() {
     config=$(engine_xray_config_file); protocol=$(_xray_client_protocol "$config" "$tag")
     host=$(inbound_meta_get xray "$tag" clientHost); [[ -n "$host" ]] || host=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen' "$config")
     uri_host=$(_xray_uri_host "$host"); port=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.port' "$config")
-    method=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.method // "raw"' "$config"); security=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.security // "none"' "$config")
-    case "$method" in raw) type=tcp ;; websocket) type=ws ;; xhttp) type=xhttp ;; *) type="$method" ;; esac
+    method=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.network // .streamSettings.method // "tcp"' "$config"); security=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.security // "none"' "$config")
+    case "$method" in tcp) type=tcp ;; ws) type=ws ;; xhttp) type=xhttp ;; *) type="$method" ;; esac
     query="type=$(_xray_uri_encode "$type")&security=$(_xray_uri_encode "$security")"
-    if [[ "$method" == websocket ]]; then path=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.wsSettings.path // "/"' "$config"); query+="&path=$(_xray_uri_encode "$path")"; fi
+    if [[ "$method" == ws ]]; then path=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.wsSettings.path // "/"' "$config"); query+="&path=$(_xray_uri_encode "$path")"; fi
     if [[ "$method" == xhttp ]]; then path=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.xhttpSettings.path // "/"' "$config"); query+="&path=$(_xray_uri_encode "$path")&mode=auto"; fi
     if [[ "$security" == tls ]]; then sni=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.streamSettings.tlsSettings.serverName // empty' "$config"); query+="&sni=$(_xray_uri_encode "$sni")&fp=chrome"; fi
     if [[ "$security" == reality ]]; then
