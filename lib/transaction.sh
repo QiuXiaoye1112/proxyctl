@@ -351,7 +351,7 @@ _apply_candidate_locked() {
     }
 
     # Core output is diagnostic output, so keep apply_candidate stdout clean.
-    if ! engine_call "$engine" validate "$snapshot" >&2; then
+    if ! engine_call "$engine" validate "$snapshot" >&2 < /dev/null; then
         error "Candidate failed ${engine} validation."
         transaction_rollback "$tx_id" >/dev/null 2>&1 || true
         return 1
