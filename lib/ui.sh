@@ -110,6 +110,7 @@ pause() {
 }
 
 confirm() {
+    stty -ixon -ixoff 2>/dev/null || true
     local __var="$1" _ui_prompt="${2:-确定继续吗？}" _ui_default="${3:-n}" _ui_answer='' _ui_suffix
     [[ "$_ui_default" == y ]] && _ui_suffix='[Y/n]' || _ui_suffix='[y/N]'
     if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then error '交互确认需要在终端中执行。'; return 1; fi
@@ -122,6 +123,7 @@ confirm() {
 choose() {
     local __var="$1" _ui_prompt="$2"
     shift 2
+    stty -ixon -ixoff 2>/dev/null || true
     local _ui_options=("$@") _ui_selection='' _ui_display=''
     local _ui_count="${#_ui_options[@]}" _ui_i
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
@@ -144,6 +146,7 @@ choose() {
 }
 
 prompt_value() {
+    stty -ixon -ixoff 2>/dev/null || true
     local __var="$1" _ui_prompt="$2" _ui_default="${3:-}" _ui_value=''
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     while true; do

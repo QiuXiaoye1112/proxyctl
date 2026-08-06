@@ -5,6 +5,7 @@
 # ------------------------------------------------------------------------------
 
 menu_read_choice() {
+    stty -ixon -ixoff 2>/dev/null || true
     local __out_var="$1" _menu_value=''
     printf '请选择: '
     read -r _menu_value || { printf '\n'; return 1; }
@@ -186,7 +187,6 @@ menu_print_all_shares() {
 
 menu_main() {
     set +e +o pipefail +o nounset  # interactive menu tolerates failures
-    stty -ixon 2>/dev/null || true  # disable XON/XOFF flow control
     local choice=''
     while true; do
         ui_clear_screen
