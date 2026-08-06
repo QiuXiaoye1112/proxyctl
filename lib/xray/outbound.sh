@@ -84,7 +84,7 @@ engine_xray_outbound_delete_candidate() {
 engine_xray_outbound_list() {
     local config
     config=$(engine_xray_config_file)
-    printf '%-24s %-24s\n' 'INBOUND' 'OUTBOUND'
+    printf '%-24s %-24s\n' '入站' '出站'
     jq -r '
       (.routing.rules // []) as $rules |
       .inbounds[]? | .tag as $tag |

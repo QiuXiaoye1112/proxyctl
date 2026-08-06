@@ -26,7 +26,7 @@ engine_singbox_inbound_client_add() {
             if jq -e --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.tls.reality.enabled==true and (.transport==null))' "$config" >/dev/null; then
                 flow=xtls-rprx-vision
             fi
-            user=$(jq -n --arg name "$label" --arg uuid "$credential" --arg flow "$flow" '{name:$name,uuid:$uuid,flow:$flow}')
+            user=$(jq -n --arg name "$label" --arg uuid "$credential" --arg flow "$flow" '{name:$name,uuid:$uuid}+(if $flow!="" then {flow:$flow} else {} end)')
             ;;
         anytls|hysteria2|trojan)
             [[ -n "$credential" ]] || credential=$(inbound_random_password)

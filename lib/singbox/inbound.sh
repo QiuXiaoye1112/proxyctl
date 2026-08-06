@@ -189,7 +189,7 @@ engine_singbox_inbound_build_from_spec() {
         vless)
             [[ -n "$name" && "$uuid" =~ ^[0-9A-Fa-f-]{36}$ ]] || return 1
             [[ "$security" == reality && -z "$transport_json" ]] && flow=xtls-rprx-vision
-            user=$(jq -n --arg name "$name" --arg uuid "$uuid" --arg flow "$flow" '{name:$name,uuid:$uuid,flow:$flow}')
+            user=$(jq -n --arg name "$name" --arg uuid "$uuid" --arg flow "$flow" '{name:$name,uuid:$uuid}+(if $flow!="" then {flow:$flow} else {} end)')
             if [[ -n "$transport_json" ]]; then jq -n --arg tag "$tag" --arg listen "$listen" --argjson port "$port" --argjson user "$user" --argjson tls "$tls" --argjson transport "$transport_json" '{type:"vless",tag:$tag,listen:$listen,listen_port:$port,users:[$user],tls:$tls,transport:$transport}'; else jq -n --arg tag "$tag" --arg listen "$listen" --argjson port "$port" --argjson user "$user" --argjson tls "$tls" '{type:"vless",tag:$tag,listen:$listen,listen_port:$port,users:[$user],tls:$tls}'; fi
             ;;
         hysteria2)
@@ -227,7 +227,7 @@ engine_singbox_inbound_client_add() {
     config=$(engine_singbox_config_file); type=$(_singbox_type "$config" "$tag")
     [[ -n "$label" ]] || prompt_value label 'User name' "user-$(inbound_random_hex 2)" || return 1
     case "$type" in
-        vless) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); if jq -e --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.tls.reality.enabled==true and (.transport==null))' "$config" >/dev/null; then flow=xtls-rprx-vision; fi; user=$(jq -n --arg name "$label" --arg uuid "$credential" --arg flow "$flow" '{name:$name,uuid:$uuid,flow:$flow}') ;;
+        vless) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); if jq -e --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|(.tls.reality.enabled==true and (.transport==null))' "$config" >/dev/null; then flow=xtls-rprx-vision; fi; user=$(jq -n --arg name "$label" --arg uuid "$credential" --arg flow "$flow" '{name:$name,uuid:$uuid}+(if $flow!="" then {flow:$flow} else {} end)') ;;
         anytls|hysteria2|trojan) [[ -n "$credential" ]] || credential=$(inbound_random_password); user=$(jq -n --arg name "$label" --arg password "$credential" '{name:$name,password:$password}') ;;
         socks|http) [[ -n "$credential" ]] || credential=$(inbound_random_password); user=$(jq -n --arg username "$label" --arg password "$credential" '{username:$username,password:$password}') ;;
         *) return 1 ;;

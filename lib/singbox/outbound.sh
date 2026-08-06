@@ -88,7 +88,7 @@ engine_singbox_outbound_delete_candidate() {
 engine_singbox_outbound_list() {
     local config
     config=$(engine_singbox_config_file)
-    printf '%-24s %-24s\n' 'INBOUND' 'OUTBOUND'
+    printf '%-24s %-24s\n' '入站' '出站'
     jq -r '
       (.route.rules // []) as $rules |
       .inbounds[]? | .tag as $tag |
