@@ -260,9 +260,9 @@ engine_xray_inbound_client_rotate() {
     config=$(engine_xray_config_file); protocol=$(_xray_client_protocol "$config" "$tag")
     candidate=$(mktemp) || return 1
     case "$protocol" in
-        vless|vmess) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); jq --arg tag "$tag" --arg label "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$label)|.id)=$v' "$config" >"$candidate" ;;
-        trojan) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg label "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$label)|.password)=$v' "$config" >"$candidate" ;;
-        socks|http) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg label "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.settings) |= ((.accounts // .users // []) as $a | ($a|map(if .user==$label then .pass=$v else . end)) as $b | .accounts=$b | .users=$b)' "$config" >"$candidate" ;;
+        vless|vmess) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); jq --arg tag "$tag" --arg lbl "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$lbl)|.id)=$v' "$config" >"$candidate" ;;
+        trojan) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg lbl "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$lbl)|.password)=$v' "$config" >"$candidate" ;;
+        socks|http) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg lbl "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.settings) |= ((.accounts // .users // []) as $a | ($a|map(if .user==$lbl then .pass=$v else . end)) as $b | .accounts=$b | .users=$b)' "$config" >"$candidate" ;;
         *) rm -f -- "$candidate"; return 1 ;;
     esac
     apply_candidate xray "$candidate"; local rc=$?; rm -f -- "$candidate"; return "$rc"
@@ -280,8 +280,8 @@ engine_xray_inbound_client_delete() {
     fi
     candidate=$(mktemp) || return 1
     case "$protocol" in
-        vless|vmess|trojan) jq --arg tag "$tag" --arg label "$label" '(.inbounds[]|select(.tag==$tag)|.settings.clients) |= map(select(.email!=$label))' "$config" >"$candidate" ;;
-        socks|http) jq --arg tag "$tag" --arg label "$label" --arg protocol "$protocol" '(.inbounds[]|select(.tag==$tag)|.settings) |= ((.accounts // .users // []) as $a | ($a|map(select(.user!=$label))) as $b | .accounts=$b | .users=$b | if $protocol=="socks" and ($b|length)==0 then .auth="noauth" else . end)' "$config" >"$candidate" ;;
+        vless|vmess|trojan) jq --arg tag "$tag" --arg lbl "$label" '(.inbounds[]|select(.tag==$tag)|.settings.clients) |= map(select(.email!=$lbl))' "$config" >"$candidate" ;;
+        socks|http) jq --arg tag "$tag" --arg lbl "$label" --arg protocol "$protocol" '(.inbounds[]|select(.tag==$tag)|.settings) |= ((.accounts // .users // []) as $a | ($a|map(select(.user!=$lbl))) as $b | .accounts=$b | .users=$b | if $protocol=="socks" and ($b|length)==0 then .auth="noauth" else . end)' "$config" >"$candidate" ;;
         *) rm -f -- "$candidate"; return 1 ;;
     esac
     apply_candidate xray "$candidate"; local rc=$?; rm -f -- "$candidate"; return "$rc"
@@ -308,7 +308,7 @@ engine_xray_inbound_share() {
         vless|trojan)
             while IFS=$'\t' read -r label credential; do
                 [[ -z "$wanted" || "$wanted" == "$label" ]] || continue
-                flow=''; [[ "$protocol" != vless ]] || flow=$(jq -r --arg tag "$tag" --arg label "$label" '.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$label)|.flow // empty' "$config")
+                flow=''; [[ "$protocol" != vless ]] || flow=$(jq -r --arg tag "$tag" --arg lbl "$label" '.inbounds[]|select(.tag==$tag)|.settings.clients[]|select(.email==$lbl)|.flow // empty' "$config")
                 if [[ -n "$flow" ]]; then
                     printf 'vless://%s@%s:%s?%s&flow=%s#%s\n' "$credential" "$uri_host" "$port" "$query" "$(_xray_uri_encode "$flow")" "$(_xray_uri_encode "${tag}-${label}")"
                 else

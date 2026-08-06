@@ -105,7 +105,7 @@ critical() { printf '%s[严重]%s [CRITICAL] %s\n' "$COLOR_RED" "$COLOR_RESET" "
 
 pause() {
     [[ -t 0 ]] || return 0
-    printf '%s' "${1:-按回车键继续...}" >&2
+    printf '%s\n' "${1:-按回车键继续...}"
     read -r _ || true
 }
 

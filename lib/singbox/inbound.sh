@@ -242,9 +242,9 @@ engine_singbox_inbound_client_rotate() {
     inbound_exists singbox "$tag" || return 1
     config=$(engine_singbox_config_file); type=$(_singbox_type "$config" "$tag"); candidate=$(mktemp) || return 1
     case "$type" in
-        vless) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); jq --arg tag "$tag" --arg label "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.users[]|select(.name==$label)|.uuid)=$v' "$config" >"$candidate" ;;
-        anytls|hysteria2|trojan) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg label "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.users[]|select(.name==$label)|.password)=$v' "$config" >"$candidate" ;;
-        socks|http) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg label "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.users[]|select(.username==$label)|.password)=$v' "$config" >"$candidate" ;;
+        vless) [[ -n "$credential" ]] || credential=$(inbound_generate_uuid); jq --arg tag "$tag" --arg lbl "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.users[]|select(.name==$lbl)|.uuid)=$v' "$config" >"$candidate" ;;
+        anytls|hysteria2|trojan) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg lbl "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.users[]|select(.name==$lbl)|.password)=$v' "$config" >"$candidate" ;;
+        socks|http) [[ -n "$credential" ]] || credential=$(inbound_random_password); jq --arg tag "$tag" --arg lbl "$label" --arg v "$credential" '(.inbounds[]|select(.tag==$tag)|.users[]|select(.username==$lbl)|.password)=$v' "$config" >"$candidate" ;;
         *) rm -f -- "$candidate"; return 1 ;;
     esac
     apply_candidate singbox "$candidate"; local rc=$?; rm -f -- "$candidate"; return "$rc"
@@ -256,7 +256,7 @@ engine_singbox_inbound_client_delete() {
     config=$(engine_singbox_config_file); type=$(_singbox_type "$config" "$tag")
     if [[ "$type" == http ]]; then count=$(jq --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.users|length' "$config"); listen=$(jq -r --arg tag "$tag" '.inbounds[]|select(.tag==$tag)|.listen // "0.0.0.0"' "$config"); if ((count==1)) && [[ "$listen" != 127.0.0.1 && "$listen" != ::1 ]]; then error 'Refusing to create an unauthenticated public HTTP proxy.'; return 1; fi; fi
     candidate=$(mktemp) || return 1
-    case "$type" in vless|anytls|hysteria2|trojan) jq --arg tag "$tag" --arg label "$label" '(.inbounds[]|select(.tag==$tag)|.users) |= map(select(.name!=$label))' "$config" >"$candidate" ;; socks|http) jq --arg tag "$tag" --arg label "$label" '(.inbounds[]|select(.tag==$tag)|.users) |= map(select(.username!=$label))' "$config" >"$candidate" ;; *) rm -f -- "$candidate"; return 1 ;; esac
+    case "$type" in vless|anytls|hysteria2|trojan) jq --arg tag "$tag" --arg lbl "$label" '(.inbounds[]|select(.tag==$tag)|.users) |= map(select(.name!=$lbl))' "$config" >"$candidate" ;; socks|http) jq --arg tag "$tag" --arg lbl "$label" '(.inbounds[]|select(.tag==$tag)|.users) |= map(select(.username!=$lbl))' "$config" >"$candidate" ;; *) rm -f -- "$candidate"; return 1 ;; esac
     apply_candidate singbox "$candidate"; local rc=$?; rm -f -- "$candidate"; return "$rc"
 }
 
