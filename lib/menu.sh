@@ -6,14 +6,19 @@
 
 menu_read_choice() {
     local __out_var="$1" _menu_value=''
-    printf '请选择: ' >&2
-    read -r _menu_value || { printf '\n'; return 1; }
+    read -r -p '请选择: ' _menu_value || { printf '\n' >&2; return 1; }
     printf -v "$__out_var" '%s' "$_menu_value"
 }
 
 menu_action() {
     local rc=0
-    "$@" || rc=$?
+    set +e
+    (
+        set -Eeuo pipefail
+        "$@"
+    )
+    rc=$?
+    set -e
     if ((rc != 0)); then
         warn '操作未完成，脚本仍在运行，请检查上方错误后重试。'
     fi
@@ -185,7 +190,6 @@ menu_print_all_shares() {
 }
 
 menu_main() {
-    set +e +o pipefail +o nounset  # interactive menu tolerates failures
     local choice=''
     while true; do
         ui_clear_screen
