@@ -40,7 +40,7 @@ engine_call() {
 
 # --- engine_list ------------------------------------------------------------
 engine_list() {
-    printf '%s' "${_PROXYCTL_ENGINE_LIST}" | sort -u
+    printf '%s\n' "${_PROXYCTL_ENGINE_LIST%%$'\n'}" | sort -u
 }
 
 # --- engine_exists ----------------------------------------------------------

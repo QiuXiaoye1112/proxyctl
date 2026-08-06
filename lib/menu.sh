@@ -6,6 +6,7 @@
 
 menu_read_choice() {
     local __out_var="$1" _menu_value=''
+    stty sane 2>/dev/null || true
     printf '请选择: '
     read -r _menu_value || { printf '\n'; return 1; }
     printf -v "$__out_var" '%s' "$_menu_value"
@@ -38,12 +39,15 @@ menu_select_engine() {
         _ms_options+=("$_ms_engine")
         _ms_seen+=" ${_ms_engine} "
     done
+    # Read from engine_list safely without process substitution
+    local _el_output
+    _el_output=$(engine_list) || true
     while IFS= read -r _ms_engine; do
         [[ -n "$_ms_engine" ]] || continue
         if [[ "$_ms_seen" == *" ${_ms_engine} "* ]]; then continue; fi
         if [[ "$_ms_installed_only" == 1 ]] && ! engine_call "$_ms_engine" installed >/dev/null 2>&1; then continue; fi
         _ms_options+=("$_ms_engine")
-    done < <(engine_list)
+    done <<< "$_el_output"
     ((${#_ms_options[@]})) || { warn '没有可用的核心。'; return 1; }
     if ((${#_ms_options[@]} == 1)); then printf -v "$__out_var" '%s' "${_ms_options[0]}"; else choose "$__out_var" '选择核心' "${_ms_options[@]}"; fi
 }
@@ -53,7 +57,9 @@ menu_select_inbound() {
     local _msi_tags=()
     menu_select_engine _msi_engine 1 || return 1
     inbound_config_require "$_msi_engine" || return 1
-    while IFS= read -r _msi_tag; do if [[ -n "$_msi_tag" ]]; then _msi_tags+=("$_msi_tag"); fi; done < <(jq -r '.inbounds[].tag' "$(inbound_config_file "$_msi_engine")")
+    local _msi_output
+    _msi_output=$(jq -r '.inbounds[].tag' "$(inbound_config_file "$_msi_engine")") || true
+    while IFS= read -r _msi_tag; do if [[ -n "$_msi_tag" ]]; then _msi_tags+=("$_msi_tag"); fi; done <<< "$_msi_output"
     ((${#_msi_tags[@]})) || { warn "${_msi_engine} 当前没有入站。"; return 1; }
     if ((${#_msi_tags[@]} == 1)); then _msi_tag=${_msi_tags[0]}; else choose _msi_tag "选择 ${_msi_engine} 入站" "${_msi_tags[@]}" || return 1; fi
     printf -v "$__out_engine" '%s' "$_msi_engine"
@@ -63,7 +69,9 @@ menu_select_inbound() {
 menu_select_client() {
     local __out_var="$1" _msc_engine="$2" _msc_tag="$3" _msc_label=''
     local _msc_labels=()
-    while IFS=$'\t' read -r _msc_label _; do if [[ -n "$_msc_label" ]]; then _msc_labels+=("$_msc_label"); fi; done < <(inbound_clients "$_msc_engine" "$_msc_tag")
+    local _msc_output
+    _msc_output=$(inbound_clients "$_msc_engine" "$_msc_tag") || true
+    while IFS=$'\t' read -r _msc_label _; do if [[ -n "$_msc_label" ]]; then _msc_labels+=("$_msc_label"); fi; done <<< "$_msc_output"
     ((${#_msc_labels[@]})) || { warn '该入站当前没有用户。'; return 1; }
     if ((${#_msc_labels[@]} == 1)); then printf -v "$__out_var" '%s' "${_msc_labels[0]}"; else choose "$__out_var" '选择用户' "${_msc_labels[@]}"; fi
 }
@@ -72,10 +80,12 @@ menu_select_outbound() {
     local __out_engine="$1" __out_tag="$2" _mso_engine='' _mso_tag=''
     local _mso_tags=()
     menu_select_engine _mso_engine 1 || return 1
+    local _mso_output
+    _mso_output=$(outbound_meta_list_managed "$_mso_engine") || true
     while IFS= read -r _mso_tag; do
         [[ -n "$_mso_tag" ]] || continue
         if outbound_exists "$_mso_engine" "$_mso_tag"; then _mso_tags+=("$_mso_tag"); fi
-    done < <(outbound_meta_list_managed "$_mso_engine")
+    done <<< "$_mso_output"
     ((${#_mso_tags[@]})) || { warn "${_mso_engine} 没有由 ProxyCTL 添加、可安全删除的出站。"; return 1; }
     if ((${#_mso_tags[@]} == 1)); then _mso_tag=${_mso_tags[0]}; else choose _mso_tag "选择 ${_mso_engine} 出站" "${_mso_tags[@]}" || return 1; fi
     printf -v "$__out_engine" '%s' "$_mso_engine"
