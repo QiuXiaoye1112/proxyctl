@@ -5,7 +5,6 @@
 # ------------------------------------------------------------------------------
 
 menu_read_choice() {
-    stty -ixon -ixoff 2>/dev/null || true
     local __out_var="$1" _menu_value=''
     printf '请选择: '
     read -r _menu_value || { printf '\n'; return 1; }

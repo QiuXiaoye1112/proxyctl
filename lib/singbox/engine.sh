@@ -214,10 +214,11 @@ engine_singbox_enable()  { service_enable "$(engine_singbox_service_name)"; }
 engine_singbox_disable() { service_disable "$(engine_singbox_service_name)"; }
 engine_singbox_is_active() { engine_singbox_installed || return 1; service_is_active "$(engine_singbox_service_name)"; }
 engine_singbox_validate() {
-    local config_file="${1:-${SINGBOX_CONFIG}}"
+    local config_file="${1:-${SINGBOX_CONFIG}}" output
     engine_singbox_installed || { error 'sing-box is not installed.'; return 1; }
     [[ -f "$config_file" && ! -L "$config_file" ]] || { error "Config file not found or unsafe: ${config_file}"; return 1; }
-    sing-box check -c "$config_file"
+    output=$(sing-box check -c "$config_file" 2>&1) || { printf '%s\n' "$output" >&2; return 1; }
+    printf '%s\n' "$output" >&2
 }
 engine_singbox_logs() { service_logs "$(engine_singbox_service_name)" "${1:-100}"; }
 engine_singbox_config_file() { printf '%s\n' "${SINGBOX_CONFIG}"; }

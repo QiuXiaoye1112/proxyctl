@@ -211,10 +211,11 @@ engine_xray_enable()  { service_enable "$(engine_xray_service_name)"; }
 engine_xray_disable() { service_disable "$(engine_xray_service_name)"; }
 engine_xray_is_active() { engine_xray_installed || return 1; service_is_active "$(engine_xray_service_name)"; }
 engine_xray_validate() {
-    local config_file="${1:-${XRAY_CONFIG}}"
+    local config_file="${1:-${XRAY_CONFIG}}" output
     engine_xray_installed || { error 'Xray is not installed.'; return 1; }
     [[ -f "$config_file" && ! -L "$config_file" ]] || { error "Config file not found or unsafe: ${config_file}"; return 1; }
-    xray run -test -config "$config_file"
+    output=$(xray run -test -format json -config "$config_file" 2>&1) || { printf '%s\n' "$output" >&2; return 1; }
+    printf '%s\n' "$output" >&2
 }
 engine_xray_logs() { service_logs "$(engine_xray_service_name)" "${1:-100}"; }
 engine_xray_config_file() { printf '%s\n' "${XRAY_CONFIG}"; }
