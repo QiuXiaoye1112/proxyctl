@@ -105,7 +105,7 @@ critical() { printf '%s[严重]%s [CRITICAL] %s\n' "$COLOR_RED" "$COLOR_RESET" "
 
 pause() {
     [[ -t 0 ]] || return 0
-    printf '%s\n' "${1:-按回车键继续...}"
+    printf '%s\n' "${1:-按回车键继续...}" >&2
     read -r _ || true
 }
 
@@ -113,8 +113,8 @@ confirm() {
     local __var="$1" _ui_prompt="${2:-确定继续吗？}" _ui_default="${3:-n}" _ui_answer='' _ui_suffix
     [[ "$_ui_default" == y ]] && _ui_suffix='[Y/n]' || _ui_suffix='[y/N]'
     if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then error '交互确认需要在终端中执行。'; return 1; fi
-    printf '%s %s ' "$_ui_prompt" "$_ui_suffix"
-    read -r _ui_answer || { printf '\n'; _ui_answer="$_ui_default"; }
+    printf '%s %s ' "$_ui_prompt" "$_ui_suffix" >&2
+    read -r _ui_answer || { printf '\n' >&2; _ui_answer="$_ui_default"; }
     _ui_answer="${_ui_answer:-$_ui_default}"
     case "${_ui_answer,,}" in y|yes|是|好|确认) printf -v "$__var" '%s' y ;; *) printf -v "$__var" '%s' n ;; esac
 }
@@ -127,14 +127,14 @@ choose() {
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     ((_ui_count > 0)) || { error '没有可选项。'; return 1; }
     [[ -t 0 || -n "${PROXYCTL_NO_TTY_GUARD:-}" ]] || { error '交互选择需要在终端中执行。'; return 1; }
-    printf '%s\n' "$_ui_prompt"
+    printf '%s\n' "$_ui_prompt" >&2
     for _ui_i in "${!_ui_options[@]}"; do
         _ui_display=$(_ui_translate_option "${_ui_options[$_ui_i]}")
-        printf '  %d) %s\n' "$((_ui_i + 1))" "$_ui_display"
+        printf '  %d) %s\n' "$((_ui_i + 1))" "$_ui_display" >&2
     done
     while true; do
-        printf '请选择 [1-%s]: ' "$_ui_count"
-        read -r _ui_selection || { printf '\n'; return 1; }
+        printf '请选择 [1-%s]: ' "$_ui_count" >&2
+        read -r _ui_selection || { printf '\n' >&2; return 1; }
         if [[ "$_ui_selection" =~ ^[0-9]+$ ]] && ((10#$_ui_selection >= 1 && 10#$_ui_selection <= _ui_count)); then
             printf -v "$__var" '%s' "${_ui_options[$((10#$_ui_selection - 1))]}"
             return 0
@@ -149,13 +149,13 @@ prompt_value() {
     while true; do
         if [[ -n "$_ui_default" ]]; then
             if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then printf -v "$__var" '%s' "$_ui_default"; return 0; fi
-            printf '%s [%s]: ' "$_ui_prompt" "$_ui_default"
-            read -r _ui_value || { printf '\n'; warn '输入已中断。'; return 1; }
+            printf '%s [%s]: ' "$_ui_prompt" "$_ui_default" >&2
+            read -r _ui_value || { printf '\n' >&2; warn '输入已中断。'; return 1; }
             _ui_value="${_ui_value:-$_ui_default}"
         else
             [[ -t 0 || -n "${PROXYCTL_NO_TTY_GUARD:-}" ]] || { error '该操作需要在终端中输入值。'; return 1; }
-            printf '%s: ' "$_ui_prompt"
-            read -r _ui_value || { printf '\n'; warn '输入已中断。'; return 1; }
+            printf '%s: ' "$_ui_prompt" >&2
+            read -r _ui_value || { printf '\n' >&2; warn '输入已中断。'; return 1; }
             [[ -n "$_ui_value" ]] || { warn '此项不能为空，请重新输入。'; continue; }
         fi
         printf -v "$__var" '%s' "$_ui_value"
@@ -167,8 +167,8 @@ prompt_optional() {
     local __var="$1" _ui_prompt="$2" _ui_default="${3:-}" _ui_value=''
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     if [[ ! -t 0 && -z "${PROXYCTL_NO_TTY_GUARD:-}" ]]; then printf -v "$__var" '%s' "$_ui_default"; return 0; fi
-    printf '%s: ' "$_ui_prompt"
-    read -r _ui_value || { printf '\n'; warn '输入已中断。'; return 1; }
+    printf '%s: ' "$_ui_prompt" >&2
+    read -r _ui_value || { printf '\n' >&2; warn '输入已中断。'; return 1; }
     printf -v "$__var" '%s' "${_ui_value:-$_ui_default}"
 }
 
@@ -176,8 +176,8 @@ prompt_secret() {
     local __var="$1" _ui_prompt="$2" _ui_value=''
     _ui_prompt=$(_ui_translate_prompt "$_ui_prompt")
     [[ -t 0 || -n "${PROXYCTL_NO_TTY_GUARD:-}" ]] || { error '密码输入需要在终端中执行。'; return 1; }
-    printf '%s: ' "$_ui_prompt"
-    read -r _ui_value || { printf '\n'; warn '输入已中断。'; return 1; }
+    printf '%s: ' "$_ui_prompt" >&2
+    read -r _ui_value || { printf '\n' >&2; warn '输入已中断。'; return 1; }
     [[ -n "$_ui_value" ]] || { warn '密码不能为空。'; return 1; }
     printf -v "$__var" '%s' "$_ui_value"
 }

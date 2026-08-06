@@ -6,7 +6,7 @@
 
 menu_read_choice() {
     local __out_var="$1" _menu_value=''
-    printf '请选择: '
+    printf '请选择: ' >&2
     read -r _menu_value || { printf '\n'; return 1; }
     printf -v "$__out_var" '%s' "$_menu_value"
 }
